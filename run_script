@@ -1,0 +1,3 @@
+#!/bin/bash
+uv run datasets.py #+transform.resize=1
+# plus add a configuration option

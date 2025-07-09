@@ -1,0 +1,20 @@
+dataset:
+  image_dir: "images"
+  augmentations:
+    rotation: 30 
+    random_resize_crop: 
+      size: [224, 224]
+      scale: [0.8, 1.0]                 
+    blur:
+      kernel_size: [5, 5]
+      sigma: [1.5, 1.5]
+  transform:
+    resize: [1024, 1024]
+    center_crop_size: [512, 512]
+    normalize:
+      mean: [0.5, 0.5, 0.5]
+      std: [0.5, 0.5, 0.5]
+dataloader:
+  batch_size: 32
+  num_workers: 8
+  shuffle: true
