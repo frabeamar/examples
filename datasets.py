@@ -8,14 +8,6 @@ from pathlib import Path
 from dataclasses import dataclass
 from torchvision import transforms
 import torch.nn as nn
-import torch
-import kornia
-import kornia.augmentation as K
-import kornia.color as C
-import kornia.filters as F
-import kornia.geometry.transform as T
-from PIL import Image
-import torchvision.transforms as TV
 import numpy as np
 
 # Load image and convert to tensor
@@ -24,73 +16,81 @@ from abc import ABC
 # Processing pipeline
 from omegaconf import DictConfig, OmegaConf
 import hydra
-from config import AugmentationConfig, Config  , DatasetConfig, DataloaderConfig , TransformConfig
+from config import (
+    AugmentationConfig,
+    Config,
+    DatasetConfig,
+    TransformConfig,
+)
+
 
 @dataclass
-class TorchImage:
-    image: torch.tensor
+class NumpyImage:
+    image: np.ndarray
 
     @classmethod
-    def from_path(self, path: Path):
+    def from_path(cls, path: Path):
         image = skimage.io.imread(path)
-        image = kornia.utils.image_to_tensor(image).unsqueeze(0)
-        return image / 255
-
-    def as_image(self):
-        return kornia.utils.tensor_to_image((self.image * 255).to(torch.uint8), keepdim=False)
-
+        return cls(image=image)
 
 
 @dataclass
 class Pipeline(ABC):
-    def __call__(self, x: TorchImage) -> TorchImage:
+    def __call__(self, x: NumpyImage) -> NumpyImage:
         pass
 
 
 # Apply pipeline
 @dataclass
 class Augmentations(Pipeline):
-    pipeline: K.AugmentationSequential
+    pipeline: transforms.Compose
 
     @classmethod
     def from_config(cls, cfg: AugmentationConfig):
         return cls(
-            K.AugmentationSequential(
-                K.RandomRotation(degrees=cfg.rotation),
-                K.RandomResizedCrop(
-                    size=tuple(cfg.random_resize_crop.size),
-                    scale=tuple(cfg.random_resize_crop.scale),
-                ),
-                F.GaussianBlur2d(tuple(cfg.blur.kernel_size), tuple(cfg.blur.sigma)),
-                data_keys=["input"],
-                keepdim=True,
+            transforms.Compose(
+                [
+                    transforms.RandomRotation(degrees=cfg.rotation),
+                    transforms.RandomResizedCrop(
+                        size=tuple(cfg.random_resize_crop.size),
+                        scale=tuple(cfg.random_resize_crop.scale),
+                        antialias=True,
+                    ),
+                    transforms.GaussianBlur(
+                        kernel_size=tuple(cfg.blur.kernel_size),
+                        sigma=tuple(cfg.blur.sigma),
+                    ),
+                ]
             )
         )
 
-    def __call__(self, x: TorchImage):
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        x.image = self.pipeline(x)
         return x
 
 
 @dataclass
 class Transformer:
-    pipeline: K.AugmentationSequential
+    pipeline: transforms.Compose
 
     @classmethod
     def from_config(cls, cfg: TransformConfig):
         return cls(
-            K.AugmentationSequential(
-                K.Resize(tuple(cfg.resize)),
-                K.CenterCrop(
-                    size=tuple(cfg.center_crop_size),
-                ),
-                # K.Normalize(tuple(cfg.normalize.mean), tuple(cfg.normalize.std)),
-                data_keys=["input"],
-                keepdim=True,
+            transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Resize(tuple(cfg.resize)),
+                    transforms.CenterCrop(
+                        size=tuple(cfg.center_crop_size),
+                    ),
+                    # transforms.Normalize(tuple(cfg.normalize.mean), tuple(cfg.normalize.std)),
+                ]
             )
         )
 
-    def __call__(self, x: TorchImage) -> TorchImage:
-        return self.pipeline(x)
+    def __call__(self, x: NumpyImage) -> torch.Tensor:
+        return self.pipeline(x.image)
+
 
 class CustomDataset(Dataset):
     def __init__(self, cfg: DatasetConfig):
@@ -109,17 +109,19 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path = self.image_dir / f"img_{idx:05}.jpeg"
-        image = TorchImage.from_path(img_path)
-        #kornia adds a batch dimention
+        image = NumpyImage.from_path(img_path)
+        image = self.transform(
+            image)
         image = self.augment(image)
-        image = self.transform(image)
 
-        return image[0]
+        return image
 
 
 # Example usage:
-def show(x: TorchImage):
-    skimage.io.imsave("here.png", TorchImage( x).as_image())
+def show(x: torch.tensor):
+    y = x.permute([1, 2, 0]) * 255 
+    z = y.to(torch.uint8)
+    skimage.io.imsave("here.png", z)
 
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
@@ -128,7 +130,7 @@ def app(cfg: DictConfig) -> None:
     dataset = CustomDataset(pydantic_config.dataset)
     dataloader = DataLoader(dataset, **pydantic_config.dataloader.model_dump())
     for i, data in enumerate(dataloader):
-        show(data)
+        show(data[0])
 
 
 if __name__ == "__main__":
