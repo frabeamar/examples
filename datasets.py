@@ -24,6 +24,7 @@ from abc import ABC
 # Processing pipeline
 from omegaconf import DictConfig, OmegaConf
 import hydra
+from config import AugmentationConfig, Config  , DatasetConfig, DataloaderConfig , TransformConfig
 
 @dataclass
 class TorchImage:
@@ -52,13 +53,13 @@ class Augmentations(Pipeline):
     pipeline: K.AugmentationSequential
 
     @classmethod
-    def from_config(cls, cfg: DictConfig):
+    def from_config(cls, cfg: AugmentationConfig):
         return cls(
             K.AugmentationSequential(
                 K.RandomRotation(degrees=cfg.rotation),
                 K.RandomResizedCrop(
                     size=tuple(cfg.random_resize_crop.size),
-                    scale=cfg.random_resize_crop.scale,
+                    scale=tuple(cfg.random_resize_crop.scale),
                 ),
                 F.GaussianBlur2d(tuple(cfg.blur.kernel_size), tuple(cfg.blur.sigma)),
                 data_keys=["input"],
@@ -75,7 +76,7 @@ class Transformer:
     pipeline: K.AugmentationSequential
 
     @classmethod
-    def from_config(cls, cfg):
+    def from_config(cls, cfg: TransformConfig):
         return cls(
             K.AugmentationSequential(
                 K.Resize(tuple(cfg.resize)),
@@ -92,7 +93,7 @@ class Transformer:
         return self.pipeline(x)
 
 class CustomDataset(Dataset):
-    def __init__(self, cfg: DictConfig):
+    def __init__(self, cfg: DatasetConfig):
         """
         Args:
             label_dict (dict): Dictionary mapping image filenames to labels.
@@ -118,17 +119,16 @@ class CustomDataset(Dataset):
 
 # Example usage:
 def show(x: TorchImage):
-    breakpoint()
     skimage.io.imsave("here.png", TorchImage( x).as_image())
 
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def app(cfg: DictConfig) -> None:
-    dataset = CustomDataset(cfg.dataset)
-    dataset[0]
-    dataloader = DataLoader(dataset, **cfg.dataloader)
+    pydantic_config = Config(**OmegaConf.to_container(cfg, resolve=True))
+    dataset = CustomDataset(pydantic_config.dataset)
+    dataloader = DataLoader(dataset, **pydantic_config.dataloader.model_dump())
     for i, data in enumerate(dataloader):
-        pass
+        show(data)
 
 
 if __name__ == "__main__":
