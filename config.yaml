@@ -4,9 +4,8 @@ dataset:
     rotation: 30 
     random_resize_crop: 
       size: [224, 224]
-      scale: [0.8, 1.0]                 
     blur:
-      kernel_size: [5, 5]
+      limit: 5
       sigma: [1.5, 1.5]
   transform:
     resize: [1024, 1024]

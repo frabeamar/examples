@@ -3,10 +3,9 @@ from typing import List
 
 class RandomResizeCrop(BaseModel):
     size: List[int]
-    scale: List[float]
 
 class Blur(BaseModel):
-    kernel_size: List[int]
+    limit: int
     sigma: List[float]
 
 class AugmentationConfig(BaseModel):

@@ -22,6 +22,7 @@ from config import (
     DatasetConfig,
     TransformConfig,
 )
+import albumentations as A
 
 
 @dataclass
@@ -43,30 +44,27 @@ class Pipeline(ABC):
 # Apply pipeline
 @dataclass
 class Augmentations(Pipeline):
-    pipeline: transforms.Compose
+    pipeline: A.Compose
 
     @classmethod
     def from_config(cls, cfg: AugmentationConfig):
         return cls(
-            transforms.Compose(
+            A.Compose(
                 [
-                    transforms.RandomRotation(degrees=cfg.rotation),
-                    transforms.RandomResizedCrop(
-                        size=tuple(cfg.random_resize_crop.size),
-                        scale=tuple(cfg.random_resize_crop.scale),
-                        antialias=True,
+                    A.Rotate(limit=cfg.rotation),
+                    A.RandomResizedCrop(
+                        size=cfg.random_resize_crop.size,
                     ),
-                    transforms.GaussianBlur(
-                        kernel_size=tuple(cfg.blur.kernel_size),
-                        sigma=tuple(cfg.blur.sigma),
+                    A.GaussianBlur(
+                        blur_limit=cfg.blur.limit,
+                        sigma_limit=tuple(cfg.blur.sigma),
                     ),
                 ]
             )
         )
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        x.image = self.pipeline(x)
-        return x
+        return self.pipeline(image=x.numpy())["image"]
 
 
 @dataclass
@@ -110,8 +108,7 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.image_dir / f"img_{idx:05}.jpeg"
         image = NumpyImage.from_path(img_path)
-        image = self.transform(
-            image)
+        image = self.transform(image)
         image = self.augment(image)
 
         return image
@@ -119,16 +116,16 @@ class CustomDataset(Dataset):
 
 # Example usage:
 def show(x: torch.tensor):
-    y = x.permute([1, 2, 0]) * 255 
+    y = x.permute([1, 2, 0]) * 255
     z = y.to(torch.uint8)
     skimage.io.imsave("here.png", z)
 
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def app(cfg: DictConfig) -> None:
-    pydantic_config = Config(**OmegaConf.to_container(cfg, resolve=True))
-    dataset = CustomDataset(pydantic_config.dataset)
-    dataloader = DataLoader(dataset, **pydantic_config.dataloader.model_dump())
+    config = Config(**OmegaConf.to_container(cfg, resolve=True))
+    dataset = CustomDataset(config.dataset) 
+    dataloader = DataLoader(dataset, **config.dataloader.model_dump())
     for i, data in enumerate(dataloader):
         show(data[0])
 
