@@ -5,15 +5,25 @@ description = "Image processing dataset"
 requires-python = ">=3.10"
 
 dependencies = [
-    "torch>=1.9.1",              
-    "kornia>=0.8.1",             
-    "albumentations>=2.0.8",     
-    "opencv-python",            
-    "numpy",                  
+    "torch>=1.9.1",
+    "kornia",
+    "albumentations>=2.0.8",
+    "opencv-python",
+    "numpy",
+    "datasets",
+    "torchvision",
+    "transformers",
+    "accelerate",
+    "timm",
     "pillow",
     "omegaconf",
     "torchvision",
-    "hydra-core",    
+    "hydra-core",
     "scikit-image>=0.25.2",
-    "matplotlib"
+    "torchmetrics",
+    "matplotlib",
+    "seaborn",
+    "typer",
+    "transformers",
+    "pandas",
 ]
