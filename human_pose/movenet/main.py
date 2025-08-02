@@ -1,22 +1,22 @@
+from collections import deque
+from dataclasses import dataclass
+import itertools
 import tensorflow as tf
 import tensorflow_hub as hub
 from pathlib import Path
-from drawing import draw_prediction_on_image, progress, to_gif
+from drawing import draw_prediction_on_image
 import numpy as np
 import cv2
 import os
-from cropping import (
-    init_crop_region,
-    determine_crop_region,
-    run_inference
-)
+import time
+from dataclasses import field
+from threading import Thread, Event
+
+from cropping import init_crop_region, determine_crop_region, run_inference
 
 # Import matplotlib libraries
 from matplotlib import pyplot as plt
-import matplotlib
-matplotlib.use("Agg")  # Use a non-interactive backend for matplotlib
 # Some modules to display an animation using imageio.
-from IPython.display import display
 
 model_name = "movenet_lightning"
 
@@ -30,6 +30,63 @@ def load_video(video_path):
             print("Error reading frame from video.")
             break
         yield frame
+
+
+@dataclass
+class ReadCameraInput:
+    _cap: cv2.VideoCapture 
+    _thread: Thread | None = None
+    _stop_event: Event | None = None
+    q: deque = field(default_factory=lambda: deque(maxlen=10))
+
+    @classmethod
+    def from_stream(cls, stream_url="udp://@:1234"):
+        """Start reading frames from the UDP stream in a background thread."""
+        cap = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
+        if not cap.isOpened():
+            raise RuntimeError("Error: Cannot open UDP stream")
+        return cls(cap)
+    
+    def start(self):
+        stop_event = Event()
+        # Create a deque to hold frames, with a maximum length of 10
+        stop_event.clear()
+        self._stop_event = stop_event 
+        thread = Thread(target=self._update, daemon=True)
+        self._thread = thread
+        thread.start()
+        return self
+
+    def _update(self):
+        """Background thread function to read frames and fill the deque."""
+        while not self._stop_event.is_set():
+            ret, frame = self._cap.read()
+            if not ret:
+                print("No frame received or stream ended.")
+                break
+            self.q.append(frame)
+
+        self._cap.release()
+
+    def stop(self):
+        """Stop the background thread and release the video capture."""
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join()
+        if self._cap is not None and self._cap.isOpened():
+            self._cap.release()
+
+    def read(self):
+        """Yield frames from the deque."""
+        while True:
+            if self.q:
+                yield self.q.popleft()[..., ::-1]  # Convert BGR to RGB
+            else:
+                # No frames available, optionally wait a bit or break
+                # You can add: time.sleep(0.01)
+                continue
+
+
 
 
 def download_model(model_name):
@@ -118,6 +175,7 @@ def download_model(model_name):
 
     return movenet, input_size
 
+
 def run_default(input_image, movenet, input_size):
     input_image = tf.image.resize_with_pad(input_image, input_size, input_size)
 
@@ -132,22 +190,21 @@ def run_default(input_image, movenet, input_size):
     output_overlay = draw_prediction_on_image(
         np.squeeze(display_image.numpy(), axis=0), keypoints_with_scores
     )
-    plt.imshow(output_overlay)
-    plt.show()
-    _ = plt.axis("off")
-    plt.savefig("output_image.png", bbox_inches="tight", pad_inches=0.0)
-    plt.close()
+    # plt.imshow(output_overlay)
+    # plt.show(block=False)
+    # _ = plt.axis("off")
+
 
 def run_with_cropping_algo(image, movenet, input_size):
     # Load the input image.
-    
+
     num_frames, image_height, image_width, _ = image.shape
     crop_region = init_crop_region(image_height, image_width)
 
     output_images = []
     plt.figure(figsize=(5, 5))
 
-    bar = display(progress(0, num_frames - 1), display_id=True)
+    # bar = display(progress(0, num_frames - 1), display_id=True)
     for frame_idx in range(num_frames):
         keypoints_with_scores = run_inference(
             movenet,
@@ -155,14 +212,12 @@ def run_with_cropping_algo(image, movenet, input_size):
             crop_region,
             crop_size=[input_size, input_size],
         )
-        output_image =(
-            draw_prediction_on_image(
-                image[frame_idx, :, :, :].numpy().astype(np.int32),
-                keypoints_with_scores,
-                crop_region=None,
-                close_figure=True,
-                output_image_height=300,
-            )
+        output_image = draw_prediction_on_image(
+            image[frame_idx, :, :, :].numpy().astype(np.int32),
+            keypoints_with_scores,
+            crop_region=None,
+            close_figure=True,
+            output_image_height=300,
         )
         crop_region = determine_crop_region(
             keypoints_with_scores, image_height, image_width
@@ -173,15 +228,23 @@ def run_with_cropping_algo(image, movenet, input_size):
 
 
 if __name__ == "__main__":
-
     movenet, input_size = download_model(model_name)
-    path = Path("movenet/output_h264.mp4") 
+    path = Path.home() / ("data/output_h264.mp4")
     # Resize and pad the image to keep the aspect ratio and fit the expected size.
     plt.figure(figsize=(15, 15))
 
-    for image in load_video(path):
+    # for image in load_video(path):
+    input_stream = ReadCameraInput.from_stream().start()
+    for image in input_stream.read():
+        print("Processing frame...")
+        # plt.imshow(image)
+        # plt.axis("off")
+        # plt.savefig("input_image.png", bbox_inches="tight", pad_inches=0.0)
+        # transform numpy to tensor
+        # input_image = tf.convert_to_tensor(image, dtype=tf.float32)
         input_image = tf.expand_dims(image, axis=0)
-            
-        run_with_cropping_algo(input_image, movenet, input_size)
+        time = time.time()
+        run_default(input_image, movenet, input_size)
+        print(time.time() - time)
 
-
+        # run_with_cropping_algo(input_image, movenet, input_size)
