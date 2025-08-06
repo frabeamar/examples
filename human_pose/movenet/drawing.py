@@ -8,11 +8,56 @@ from matplotlib import pyplot as plt
 from matplotlib.collections import LineCollection
 import matplotlib.patches as patches
 from utils import KEYPOINT_EDGE_INDS_TO_COLOR
+
 # Some modules to display an animation using imageio.
 import imageio
 from IPython.display import HTML
+from mediapipe import solutions
+from mediapipe.framework.formats import landmark_pb2
+
+coco_to_mp_map = [
+    0,  # 0: Nose
+    1,  # 1: Left Eye
+    2,  # 2: Right Eye
+    3,  # 3: Left Ear
+    4,  # 4: Right Ear
+    11,  # 5: Left Shoulder
+    12,  # 6: Right Shoulder
+    13,  # 7: Left Elbow
+    14,  # 8: Right Elbow
+    15,  # 9: Left Wrist
+    16,  # 10: Right Wrist
+    23,  # 11: Left Hip
+    24,  # 12: Right Hip
+    25,  # 13: Left Knee
+    26,  # 14: Right Knee
+    27,  # 15: Left Ankle
+    28,  # 16: Right Ankle
+]
 
 
+def draw_landmarks_on_image(rgb_image, keypoints_with_scores):
+    annotated_image = np.copy(rgb_image)
+
+    # Loop through the detected poses to visualize.
+    # Draw the pose landmarks.
+    pose_landmarks = np.zeros((1, 1, 33, 3), dtype=np.float32)
+    pose_landmarks[:, :, coco_to_mp_map]=keypoints_with_scores
+    pose_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
+    pose_landmarks_proto.landmark.extend(
+        [
+            landmark_pb2.NormalizedLandmark(x=x, y=y, z=0)
+            for x, y in keypoints_with_scores[0, 0, :, :2]
+        ]
+    )
+    solutions.drawing_utils.draw_landmarks(
+        annotated_image,
+        pose_landmarks_proto,
+        solutions.pose.POSE_CONNECTIONS,
+        solutions.drawing_styles.get_default_pose_landmarks_style(),
+    )
+
+    return annotated_image
 
 
 def _keypoints_and_edges_for_display(

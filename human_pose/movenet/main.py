@@ -5,17 +5,22 @@ import tensorflow as tf
 import tensorflow_hub as hub
 from pathlib import Path
 from drawing import draw_prediction_on_image
+import tensorflow as tf
+import tensorflow_hub as hub
+from pathlib import Path
+from drawing import draw_landmarks_on_image, draw_prediction_on_image
 import numpy as np
 import cv2
 import os
 import time
 from dataclasses import field
 from threading import Thread, Event
-
+import skimage
 from cropping import init_crop_region, determine_crop_region, run_inference
 
 # Import matplotlib libraries
 from matplotlib import pyplot as plt
+
 # Some modules to display an animation using imageio.
 
 model_name = "movenet_lightning"
@@ -34,7 +39,7 @@ def load_video(video_path):
 
 @dataclass
 class ReadCameraInput:
-    _cap: cv2.VideoCapture 
+    _cap: cv2.VideoCapture
     _thread: Thread | None = None
     _stop_event: Event | None = None
     q: deque = field(default_factory=lambda: deque(maxlen=10))
@@ -46,12 +51,11 @@ class ReadCameraInput:
         if not cap.isOpened():
             raise RuntimeError("Error: Cannot open UDP stream")
         return cls(cap)
-    
     def start(self):
         stop_event = Event()
         # Create a deque to hold frames, with a maximum length of 10
         stop_event.clear()
-        self._stop_event = stop_event 
+        self._stop_event = stop_event
         thread = Thread(target=self._update, daemon=True)
         self._thread = thread
         thread.start()
@@ -86,7 +90,17 @@ class ReadCameraInput:
                 # You can add: time.sleep(0.01)
                 continue
 
-
+    def read_many(self):
+        """Yield frames from the deque."""
+        while True:
+            if self.q:
+                yield np.stack(
+                    [self.q.popleft()[..., ::-1] for i in range(5) if len(self.q)]
+                )  # Convert BGR to RGB
+            else:
+                # No frames available, optionally wait a bit or break
+                # You can add: time.sleep(0.01)
+                continue
 
 
 def download_model(model_name):
@@ -180,14 +194,15 @@ def run_default(input_image, movenet, input_size):
     input_image = tf.image.resize_with_pad(input_image, input_size, input_size)
 
     # Run model inference.
-    keypoints_with_scores = movenet(input_image)
-
+    input_image = tf.cast(input_image, dtype=tf.int32)
+    keypoints_with_scores = movenet(input_image)["output_0"].numpy()
     # Visualize the predictions with image.
-    display_image = tf.expand_dims(image, axis=0)
+    # display_image = tf.expand_dims(image, axis=0)
+    display_image = input_image
     display_image = tf.cast(
         tf.image.resize_with_pad(display_image, 1280, 1280), dtype=tf.int32
     )
-    output_overlay = draw_prediction_on_image(
+    output_overlay = draw_landmarks_on_image(
         np.squeeze(display_image.numpy(), axis=0), keypoints_with_scores
     )
     # plt.imshow(output_overlay)
@@ -228,7 +243,10 @@ def run_with_cropping_algo(image, movenet, input_size):
 
 
 if __name__ == "__main__":
-    movenet, input_size = download_model(model_name)
+    # movenet, input_size = download_model(model_name)
+    model = hub.load("https://tfhub.dev/google/movenet/singlepose/thunder/4")
+    movenet = model.signatures["serving_default"]
+    input_size = 256
     path = Path.home() / ("data/output_h264.mp4")
     # Resize and pad the image to keep the aspect ratio and fit the expected size.
     plt.figure(figsize=(15, 15))
@@ -241,10 +259,10 @@ if __name__ == "__main__":
         # plt.axis("off")
         # plt.savefig("input_image.png", bbox_inches="tight", pad_inches=0.0)
         # transform numpy to tensor
-        # input_image = tf.convert_to_tensor(image, dtype=tf.float32)
+        input_image = tf.convert_to_tensor(image, dtype=tf.int32)
         input_image = tf.expand_dims(image, axis=0)
-        time = time.time()
+        t = time.time()
         run_default(input_image, movenet, input_size)
-        print(time.time() - time)
+        print(time.time() - t)
 
         # run_with_cropping_algo(input_image, movenet, input_size)

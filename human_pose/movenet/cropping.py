@@ -173,7 +173,6 @@ def run_inference(movenet, image, crop_region, crop_size):
         tf.expand_dims(image, axis=0), crop_region, crop_size=crop_size
     )
     # Run model inference.
-    breakpoint()
     keypoints_with_scores = movenet(input_image / 255)
     # Update the coordinates.
     for idx in range(17):
