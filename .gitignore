@@ -6,3 +6,8 @@ __pycache__/
 *.png
 *.jpg
 *.jpeg
+*.pt
+*.pth
+*.mlpackage
+*.onnx
+uv.lock

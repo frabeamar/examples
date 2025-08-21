@@ -1,0 +1,27 @@
+[project]
+name = "model-conversion"
+version = "0.1.0"
+description = "model conversions"
+requires-python = "==3.12"
+
+dependencies = [
+    "coremltools",
+    "tensorflow",
+    "onnx", 
+    "onnx-coreml",
+    "torch",
+    "ultralytics",
+    "onnxruntime",
+
+
+
+    # for tf lite export
+    "sng4onnx>=1.0.1",  # required by 'onnx2tf' package
+    "onnx_graphsurgeon>=0.3.26",  # required by 'onnx2tf' package
+    "ai-edge-litert>=1.2.0,<1.4.0",  # required by 'onnx2tf' package
+    "onnx>=1.12.0,<1.18.0",
+    "onnx2tf>=1.26.3",
+    "onnxslim>=0.1.59",
+    "onnxruntime",
+    "protobuf>=5",
+]
