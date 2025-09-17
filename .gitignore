@@ -1,4 +1,6 @@
+checkpoints/
 outputs/
+featureout/
 __pycache__/
 .venv/
 .vscode/
@@ -6,3 +8,6 @@ __pycache__/
 *.png
 *.jpg
 *.jpeg
+submission_file.csv
+uv.lock
+*.ply
