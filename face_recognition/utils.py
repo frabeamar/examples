@@ -9,12 +9,11 @@ import torch.nn as nn
 from insightface.app import FaceAnalysis
 
 
-def read_image(filename):
+def read_image(filename: str | Path) -> np.ndarray:
     logger.debug("Reading image: {}".format(filename))
     image = cv2.imread(filename, cv2.IMREAD_COLOR)
     if image is None:
         raise IOError("Failed to load image: {}".format(filename))
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     return image
 
 
@@ -45,13 +44,13 @@ class FaceModel(nn.Module):
         self.embedder = FaceAnalysis()
         self.embedder.prepare(ctx_id=0, det_size=(640, 640))
 
-    def forward(self, x) -> list[Prediction] | None:
+    def forward(self, x: np.ndarray) -> list[Prediction]:
         faces = self.embedder.get(x)
         if len(faces) == 0:
             raise NoFaceDetected()
         return [Prediction(**f) for f in faces]
 
-    def draw_faces(self, x):
+    def draw_faces(self, x: np.ndarray) -> np.ndarray:
         faces = self.embedder.get(x)
         rimg = self.embedder.draw_on(x, faces)
         return rimg
@@ -89,7 +88,6 @@ class PreprocessPipeline:
             plt.close()
 
     def create_template(self) -> tuple[np.ndarray, np.ndarray]:
-        img = read_image("front_portrait.jpg")
         [face] = self.detector(img)
         bbox = face.bbox
         top_left = np.array([bbox[0], bbox[1]])
@@ -108,7 +106,7 @@ class PreprocessPipeline:
         faces = self.detector(image)
         return np.array([f.bbox for f in faces])
 
-    def get_largest_bounding_box(self, predictions: Prediction):
+    def get_largest_bounding_box(self, predictions: list[Prediction]) -> np.ndarray:
         def area(bbox: np.ndarray):
             return (bbox[1] - bbox[0]) * (bbox[3] - bbox[2])
 
@@ -116,11 +114,11 @@ class PreprocessPipeline:
             [(i, p.bbox) for i, p in enumerate(predictions)],
             key=lambda i, x: area(x),
             reverse=True,
-        )[0][1]
+        )[0][1]  # ignore: pyling
 
     def crop(
         self, image: np.ndarray, prediction: Prediction
-    ) -> [np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         x, y, xx, yy = map(int, prediction.bbox)
         landmarks = prediction.landmark_2d_106 - np.array([x, y])
         return image[y:yy, x:xx], landmarks
@@ -150,7 +148,7 @@ class PreprocessPipeline:
         return thumbnail
 
 
-def draw_bbox(image: np.ndarray, boxes: np.ndarray):
+def draw_bbox(image: np.ndarray, boxes: np.ndarray) -> np.ndarray:
     for box in boxes:
         x, y, width, height = box
         cv2.rectangle(
