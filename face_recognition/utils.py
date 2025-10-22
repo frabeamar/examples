@@ -11,7 +11,8 @@ from insightface.app import FaceAnalysis
 
 def read_image(filename: str | Path) -> np.ndarray:
     logger.debug("Reading image: {}".format(filename))
-    image = cv2.imread(filename, cv2.IMREAD_COLOR)
+    image = cv2.imread(str(filename), cv2.IMREAD_COLOR)  # pyright: ignore[reportCallIssue]
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     if image is None:
         raise IOError("Failed to load image: {}".format(filename))
     return image
@@ -88,6 +89,7 @@ class PreprocessPipeline:
             plt.close()
 
     def create_template(self) -> tuple[np.ndarray, np.ndarray]:
+        img = read_image("front_portrait.jpg")
         [face] = self.detector(img)
         bbox = face.bbox
         top_left = np.array([bbox[0], bbox[1]])
@@ -107,14 +109,13 @@ class PreprocessPipeline:
         return np.array([f.bbox for f in faces])
 
     def get_largest_bounding_box(self, predictions: list[Prediction]) -> np.ndarray:
-        def area(bbox: np.ndarray):
+        def area(bbox: np.ndarray) -> float:
             return (bbox[1] - bbox[0]) * (bbox[3] - bbox[2])
 
         return sorted(
             [(i, p.bbox) for i, p in enumerate(predictions)],
-            key=lambda i, x: area(x),
-            reverse=True,
-        )[0][1]  # ignore: pyling
+            key=lambda x: area(x[1]),
+        )[0][1]
 
     def crop(
         self, image: np.ndarray, prediction: Prediction
@@ -142,7 +143,7 @@ class PreprocessPipeline:
             landmarks[indices].astype(np.float32),
             normalized_tmpl.astype(np.float32),
         )
-        thumbnail = cv2.warpAffine(face, H, dsize=crop_dim)
+        thumbnail = cv2.warpAffine(face, H, dsize=crop_dim) # pyright: ignore
         if thumbnail is None:
             raise WarpingException("Could not align face")
         return thumbnail
