@@ -69,6 +69,10 @@ class PreprocessPipeline:
                 f"Detected {len(detections)} faces in {filename}.\nSplitting up"
             )
         template, indices = self.create_template()
+
+        aligned_images = []
+        crops = []
+        landmarks = []
         for i, detection in enumerate(detections):
             try:
                 aligned = self.align(
@@ -80,13 +84,30 @@ class PreprocessPipeline:
                 )
             except WarpingException as e:
                 logger.error(f"Could not align face {i} in {filename}: {e}")
+            aligned_images.append(aligned)
+            crop, landmark = self.crop(image, detection)
+            crops.append(crop)
+            landmarks.append(landmark)
 
-            face, landmarks = self.crop(image, detection)
-            fig, axs = plt.subplots(1, 2)
-            axs[0].imshow(face)
-            axs[1].imshow(aligned)
-            plt.savefig(f"aligned_{Path(filename).stem}_{i}.png")
-            plt.close()
+        return aligned_images, crops, landmarks
+
+    def display_detected(self, aligned:list[np.ndarray], crops: list[np.ndarray], landmarks:list[np.ndarray]):
+        plt.figure(figsize=(20, 10  ))
+        fig, axs = plt.subplots(len(crops), 2)
+        assert len(crops) == len(aligned) == len(landmarks)
+        for i in range(len(aligned)):
+            if i == 0:
+                axs[i, 0].set_title("Original - cropped")
+                axs[i, 1].set_title("Aligned")
+            landmark = landmarks[i]
+            axs[i, 0].imshow(crops[i]) 
+            axs[i, 0].scatter(landmark[:, 0], landmark[:, 1], s=1)
+            axs[i, 1].imshow(aligned[i])
+            axs[i, 0].axis("off")
+            axs[i, 1].axis("off")
+        plt.tight_layout
+        plt.savefig("aligned.png", dpi=150)
+        plt.close()
 
     def create_template(self) -> tuple[np.ndarray, np.ndarray]:
         img = read_image("front_portrait.jpg")
@@ -167,5 +188,5 @@ def draw_bbox(image: np.ndarray, boxes: np.ndarray) -> np.ndarray:
 
 if __name__ == "__main__":
     pip = PreprocessPipeline()
-    pip.create_template()
-    aligned = pip("group_picture.jpg")
+    aligned, crops, landmarks = pip("group_picture.jpg")
+    pip.display_detected(aligned, crops, landmarks)
