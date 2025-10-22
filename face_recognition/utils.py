@@ -52,6 +52,11 @@ class FaceModel(nn.Module):
         return [Prediction(**f) for f in faces]
 
     def draw_faces(self, x: np.ndarray) -> np.ndarray:
+        """
+        Draws bounding boxes and landmarks on the input image for detected faces.
+        Args:
+            x (np.ndarray): The input image (RGB format).
+        """
         faces = self.embedder.get(x)
         rimg = self.embedder.draw_on(x, faces)
         return rimg
@@ -61,7 +66,16 @@ class FaceModel(nn.Module):
 class PreprocessPipeline:
     detector: FaceModel = FaceModel()
 
-    def __call__(self, filename: str | Path):
+    def __call__(
+        self, filename: str | Path
+    ) -> tuple[list[np.ndarray], list[np.ndarray], list[np.ndarray]]:
+        """
+        Processes a given image file by detecting faces, aligning them to a template,
+        and cropping them.
+
+        Args:
+            filename (Union[str, Path]): The path to the image file to preprocess.
+        """
         image = read_image(str(filename))
         detections: list[Prediction] = self.detector(image)
         if len(detections) > 1:
@@ -91,8 +105,19 @@ class PreprocessPipeline:
 
         return aligned_images, crops, landmarks
 
-    def display_detected(self, aligned:list[np.ndarray], crops: list[np.ndarray], landmarks:list[np.ndarray]):
-        plt.figure(figsize=(20, 10  ))
+    def display_detected(
+        self,
+        aligned: list[np.ndarray],
+        crops: list[np.ndarray],
+        landmarks: list[np.ndarray],
+    ):
+        """
+        Displays and saves the detected, cropped, and aligned faces using matplotlib.
+        """
+        assert len(crops) == len(aligned) == len(landmarks), (
+            "Input lists must have the same length."
+        )
+        plt.figure(figsize=(20, 10))
         fig, axs = plt.subplots(len(crops), 2)
         assert len(crops) == len(aligned) == len(landmarks)
         for i in range(len(aligned)):
@@ -100,7 +125,7 @@ class PreprocessPipeline:
                 axs[i, 0].set_title("Original - cropped")
                 axs[i, 1].set_title("Aligned")
             landmark = landmarks[i]
-            axs[i, 0].imshow(crops[i]) 
+            axs[i, 0].imshow(crops[i])
             axs[i, 0].scatter(landmark[:, 0], landmark[:, 1], s=1)
             axs[i, 1].imshow(aligned[i])
             axs[i, 0].axis("off")
@@ -110,6 +135,13 @@ class PreprocessPipeline:
         plt.close()
 
     def create_template(self) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Creates a normalized landmark template from a reference
+
+        Returns:
+            - normalized_landmarks (np.ndarray): Normalized 2D landmarks [0, 1] of the reference face.
+            - inner_eyes_nose_indices (np.ndarray): Indices of specific landmarks (inner eyes and nose) used for alignment.
+        """
         img = read_image("front_portrait.jpg")
         [face] = self.detector(img)
         bbox = face.bbox
@@ -125,7 +157,14 @@ class PreprocessPipeline:
         inner_eyes_nose_indices = np.array([39, 81, 53])
         return normalized_landmarks, inner_eyes_nose_indices
 
-    def get_all_bounding_boxes(self, image: np.ndarray):
+    def get_all_bounding_boxes(self, image: np.ndarray)->np.ndarray:
+        """
+        Detects all faces in an image and returns their bounding boxes.
+        Args:
+            image (np.ndarray): The input image (RGB format).
+        Returns:
+            np.ndarray [N, 4]: An array of N bounding boxes, where each box is `[x1, y1, x2, y2]`.
+        """
         faces = self.detector(image)
         return np.array([f.bbox for f in faces])
 
@@ -141,6 +180,18 @@ class PreprocessPipeline:
     def crop(
         self, image: np.ndarray, prediction: Prediction
     ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Crops a face region from an image based on a given prediction's bounding box
+        and adjusts the landmarks to be relative to the cropped region.
+
+        Args:
+            image (np.ndarray): The original image.
+            prediction (Prediction): A `Prediction` object containing face details.
+
+        Returns:
+            - cropped_face (np.ndarray): The cropped face image.
+            - relative_landmarks (np.ndarray): Landmarks adjusted to be relative to the top-left corner of the cropped face.
+        """
         x, y, xx, yy = map(int, prediction.bbox)
         landmarks = prediction.landmark_2d_106 - np.array([x, y])
         return image[y:yy, x:xx], landmarks
@@ -153,6 +204,20 @@ class PreprocessPipeline:
         indices: np.ndarray,
         scale: float = 1,
     ) -> np.ndarray:
+        """
+        Aligns a detected face in an image to a predefined template using affine transformation.
+
+        Args:
+            image (np.ndarray): The original image.
+            prediction (Prediction): A `Prediction` object for the face to align.
+            template (np.ndarray): The normalized landmark template.
+            indices (np.ndarray): Indices of landmarks to use for alignment.
+            scale (float, optional): Scaling factor for the alignment. Defaults to 1.
+
+        Returns:
+            np.ndarray: The aligned face image.
+
+        """
         face, landmarks = self.crop(image, prediction)
         crop_dim = np.array(face.shape[:2])
         tmp_min, tmp_max = np.min(template, axis=0), np.max(template, axis=0)
@@ -164,13 +229,14 @@ class PreprocessPipeline:
             landmarks[indices].astype(np.float32),
             normalized_tmpl.astype(np.float32),
         )
-        thumbnail = cv2.warpAffine(face, H, dsize=crop_dim) # pyright: ignore
+        thumbnail = cv2.warpAffine(face, H, dsize=crop_dim)  # pyright: ignore
         if thumbnail is None:
             raise WarpingException("Could not align face")
         return thumbnail
 
 
 def draw_bbox(image: np.ndarray, boxes: np.ndarray) -> np.ndarray:
+    image_with_boxes = image.copy()
     for box in boxes:
         x, y, width, height = box
         cv2.rectangle(
@@ -183,7 +249,7 @@ def draw_bbox(image: np.ndarray, boxes: np.ndarray) -> np.ndarray:
     plt.imshow(image)
     plt.axis("off")
     plt.savefig("detected_faces.png")
-    return image
+    return image_with_boxes
 
 
 if __name__ == "__main__":
