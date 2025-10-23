@@ -1,13 +1,18 @@
+import multiprocessing as mp
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from venv import logger
-
+import logging
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import torch.nn as nn
 from insightface.app import FaceAnalysis
+from typer import Typer
 
+app = Typer()
+logger = logging.getLogger(__name__)
+logger.info("hello")
 
 def read_image(filename: str | Path) -> np.ndarray:
     logger.debug("Reading image: {}".format(filename))
@@ -110,6 +115,7 @@ class PreprocessPipeline:
         aligned: list[np.ndarray],
         crops: list[np.ndarray],
         landmarks: list[np.ndarray],
+        output_path: str,
     ):
         """
         Displays and saves the detected, cropped, and aligned faces using matplotlib.
@@ -117,8 +123,7 @@ class PreprocessPipeline:
         assert len(crops) == len(aligned) == len(landmarks), (
             "Input lists must have the same length."
         )
-        plt.figure(figsize=(20, 10))
-        fig, axs = plt.subplots(len(crops), 2)
+        fig, axs = plt.subplots(len(crops), 2, figsize=(5, 15))
         assert len(crops) == len(aligned) == len(landmarks)
         for i in range(len(aligned)):
             if i == 0:
@@ -131,7 +136,7 @@ class PreprocessPipeline:
             axs[i, 0].axis("off")
             axs[i, 1].axis("off")
         plt.tight_layout
-        plt.savefig("aligned.png", dpi=150)
+        plt.savefig(output_path, dpi=150)
         plt.close()
 
     def create_template(self) -> tuple[np.ndarray, np.ndarray]:
@@ -157,7 +162,7 @@ class PreprocessPipeline:
         inner_eyes_nose_indices = np.array([39, 81, 53])
         return normalized_landmarks, inner_eyes_nose_indices
 
-    def get_all_bounding_boxes(self, image: np.ndarray)->np.ndarray:
+    def get_all_bounding_boxes(self, image: np.ndarray) -> np.ndarray:
         """
         Detects all faces in an image and returns their bounding boxes.
         Args:
@@ -252,7 +257,30 @@ def draw_bbox(image: np.ndarray, boxes: np.ndarray) -> np.ndarray:
     return image_with_boxes
 
 
-if __name__ == "__main__":
+@app.command()
+def multiprocessing():
+    start_time = time.time()
+    pool = mp.Pool(processes=mp.cpu_count())
+    image_paths = ["group_picture.jpg"] * 2
+    pool = mp.Pool(processes=mp.cpu_count())
     pip = PreprocessPipeline()
-    aligned, crops, landmarks = pip("group_picture.jpg")
-    pip.display_detected(aligned, crops, landmarks)
+    for index, image_path in enumerate(image_paths):
+        pool.apply_async(pip, (image_path))
+
+    pool.close()
+    pool.join()
+    breakpoint()
+    logger.info("Completed in {} seconds".format(time.time() - start_time))
+
+
+@app.command()
+def main(image_path: str, output_path: str | None = None):
+    pip = PreprocessPipeline()
+    aligned, crops, landmarks = pip(image_path)
+    if output_path is None:
+        output_path = "out" + image_path
+    pip.display_detected(aligned, crops, landmarks, output_path)
+
+
+if __name__ == "__main__":
+    app()
