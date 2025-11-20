@@ -1,47 +1,25 @@
 
-# =================================================================
-# Project Metadata
-# =================================================================
-# Core metadata about the project.
-# PEP 621: https://peps.python.org/pep-0621/
 [project]
 name = "llms"
 version = "0.1.0"
-authors = [
-  { name="Your Name", email="your.email@example.com" },
-]
-description = "A short, one-sentence description of your project."
 requires-python = ">=3.10"
 
 
 # Runtime dependencies
 dependencies = [
-    "mcp[cli]",
-
+    "langchain-community",
+    "langchain-core",
+    "langchain-chroma",
+    "langchain-ollama",
+    "langchain",
+    "langchain-text-splitters",
+    "langgraph-checkpoint-postgres",
+    "psycopg-binary",
+    "tqdm",
+    "dotenv",
+    "pypdf",
+    "ruff",
+    "ollama",
+    "bs4",
+    "typer",
 ]
-
-
-
-# Optional dependencies for different environments (e.g., 'pip install .[test]')
-[project.optional-dependencies]
-test = [
-    "pytest>=7.0",
-]
-dev = [
-    "ruff",         # Linter and formatter
-    "mypy",         # Static type checker
-    "pre-commit",   # For git hooks
-]
-
-# Command-line scripts provided by your package
-# my-cli-tool = "my_awesome_project.cli:main"
-
-# =================================================================
-# Tool Configurations
-# =================================================================
-
-
-[tool.ruff]
-line-length = 88 # Match black's default
-select = ["E", "F", "W", "I", "UP", "C4", "B"] # Enable a good set of rules
-ignore = []
