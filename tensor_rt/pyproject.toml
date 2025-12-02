@@ -1,0 +1,17 @@
+[project]
+name = "tensorrt"
+version = "0.1.0"
+description = "Image processing dataset"
+requires-python = ">=3.10"
+
+dependencies = [
+    "scikit-image",
+    "torch",
+    "tensorrt",
+    "torchvision",
+    #torch_tensor rt has to be installed explicitly with pip?
+    # you have to take care that you link the right cuda libraries
+    #LD_LIBRARY_PATH is a hard link with uv
+
+]
+
