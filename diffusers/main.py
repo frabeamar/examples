@@ -1,0 +1,190 @@
+import cv2
+import dotenv
+import numpy as np
+import torch
+import torch.nn.functional as F
+import torchvision
+import tqdm
+from diffusers import DDPMPipeline, DDPMScheduler, StableDiffusionPipeline, UNet2DModel
+from PIL import Image
+from torchvision import transforms
+from torchvision.datasets import CIFAR10, Flickr30k
+from typer import Typer
+
+app = Typer(pretty_exceptions_show_locals=False, pretty_exceptions_enable=False)
+dotenv.load_dotenv("../.env")
+
+
+def show_images(x):
+    """Given a batch of images x, make a grid and convert to PIL"""
+    x = x * 0.5 + 0.5  # Map from (-1, 1) back to (0, 1)
+    grid = torchvision.utils.make_grid(x)
+    grid_im = grid.detach().cpu().permute(1, 2, 0).clip(0, 1) * 255
+    grid_im = Image.fromarray(np.array(grid_im).astype(np.uint8))
+    return grid_im
+
+
+def make_grid(images, size=64):
+    """Given a list of PIL images, stack them together into a line for easy viewing"""
+    output_im = Image.new("RGB", (size * len(images), size))
+    for i, im in enumerate(images):
+        output_im.paste(im.resize((size, size)), (i * size, 0))
+    return output_im
+
+
+# Mac users may need device = 'mps' (untested)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+# Check out https://huggingface.co/sd-dreambooth-library for loads of models from the community
+def save(image: np.ndarray):
+    image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    cv2.imwrite("image.png", image)
+
+
+@app.command()
+def potato_head():
+    # Load the pipeline
+    model_id = "sd-dreambooth-library/mr-potato-head"
+
+    pipe = StableDiffusionPipeline.from_pretrained(
+        model_id, torch_dtype=torch.float16
+    ).to(device)
+    prompt = "an abstract oil painting of sks mr potato head by picasso"
+    image = pipe(prompt, num_inference_steps=50, guidance_scale=7.5).images[0]
+    save(image)
+
+
+@app.command()
+def retrain():
+    # Load the butterfly pipeline
+    butterfly_pipeline = DDPMPipeline.from_pretrained(
+        "johnowhitaker/ddpm-butterflies-32px"
+    ).to(device)
+
+    # Create 8 images
+    images = butterfly_pipeline(batch_size=8).images
+
+    # View the result
+    grid = make_grid(images)
+    save(grid)
+
+
+def unet_model(image_size: int):
+    return UNet2DModel(
+        sample_size=image_size,  # the target image resolution
+        in_channels=3,  # the number of input channels, 3 for RGB images
+        out_channels=3,  # the number of output channels
+        layers_per_block=2,  # how many ResNet layers to use per UNet block
+        block_out_channels=(64, 128, 128, 256),  # More channels -> more parameters
+        down_block_types=(
+            "DownBlock2D",  # a regular ResNet downsampling block
+            "DownBlock2D",
+            "AttnDownBlock2D",  # a ResNet downsampling block with spatial self-attention
+            "AttnDownBlock2D",
+        ),
+        up_block_types=(
+            "AttnUpBlock2D",
+            "AttnUpBlock2D",  # a ResNet upsampling block with spatial self-attention
+            "UpBlock2D",
+            "UpBlock2D",  # a regular ResNet upsampling block
+        ),
+    )
+
+
+
+@app.command()
+def retrain_cifar():
+    # We'll train on 32-pixel square images, but you can try larger sizes too
+    image_size = 32
+    # You can lower your batch size if you're running out of GPU memory
+    batch_size = 64
+    preprocess = transforms.Compose(
+        [
+            transforms.Resize((image_size, image_size)),  # Resize
+            transforms.RandomHorizontalFlip(),  # Randomly flip (data augmentation)
+            transforms.ToTensor(),  # Convert to tensor (0, 1)
+            transforms.Normalize([0.5], [0.5]),  # Map to (-1, 1)
+        ]
+    )
+
+    def transform(example):
+        images = preprocess(example)
+        return {"images": images}
+
+    dataset = Flickr30k(root="flickr30k", download=True, transform=transform)
+    # Define data augmentations
+
+    # Create a dataloader from the dataset to serve up the transformed images in batches
+    train_dataloader = torch.utils.data.DataLoader(
+        dataset, batch_size=batch_size, shuffle=True
+    )
+
+    # Create a model
+    model = unet_model(image_size)
+    model.to(device)
+    # Set the noise scheduler
+    noise_scheduler = DDPMScheduler(
+        num_train_timesteps=1000, beta_schedule="squaredcos_cap_v2"
+    )
+
+    # Training loop
+    optimizer = torch.optim.AdamW(model.parameters(), lr=4e-4)
+
+    losses = []
+
+    for epoch in range(30):
+        for step, (data, label) in tqdm.tqdm(enumerate(train_dataloader)):
+            clean_images = data["images"].to(device)
+            # Sample noise to add to the images
+            noise = torch.randn(clean_images.shape).to(clean_images.device)
+            bs = clean_images.shape[0]
+
+            # Sample a random timestep for each image
+            timesteps = torch.randint(
+                0,
+                noise_scheduler.num_train_timesteps,
+                (bs,),
+                device=clean_images.device,
+            ).long()
+
+            # Add noise to the clean images according to the noise magnitude at each timestep
+            noisy_images = noise_scheduler.add_noise(clean_images, noise, timesteps)
+
+            # Get the model prediction
+            noise_pred = model(noisy_images, timesteps, return_dict=False)[0]
+
+            # Calculate the loss
+            loss = F.mse_loss(noise_pred, noise)
+            loss.backward(loss)
+            losses.append(loss.item())
+
+            # Update the model parameters with the optimizer
+            optimizer.step()
+            optimizer.zero_grad()
+
+        torch.save(model.state_dict(), f"model_{epoch}.pt")
+        torch.save(optimizer.state_dict(), f"optimizer_{epoch}.pt")
+        if (epoch + 1) % 5 == 0:
+            loss_last_epoch = sum(losses[-len(train_dataloader) :]) / len(
+                train_dataloader
+            )
+            print(f"Epoch:{epoch + 1}, loss: {loss_last_epoch}")
+
+
+@app.command()
+def predict():
+    model = torch.load("model_29.pt")
+    net = unet_model(32)
+    net.load_state_dict(model)
+    noise_scheduler = DDPMScheduler(
+        num_train_timesteps=1000, beta_schedule="squaredcos_cap_v2"
+    )
+    image_pipe = DDPMPipeline(unet=net, scheduler=noise_scheduler)
+    pipe = image_pipe()
+    img = pipe.images[0]
+    breakpoint()
+    cv2.imwrite("image.png", cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR))
+
+
+app()

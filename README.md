@@ -1,6 +1,8 @@
 # examples
 A collection of notes / tutorial and examples. Mostly deeplearning. 
 Might not be pretty
+## diffusers
+trained ddpm via huggingface on cifar. 
 ## tensor_rt
 
 JIT compiler -> just in time; only the parts that run often get optimize

@@ -1,0 +1,20 @@
+[project]
+name = "diffusers"
+version = "0.1.0"
+description = "Image diffusion"
+requires-python = ">=3.10"
+
+dependencies = [
+    "typer",
+    "tqdm",
+    "numpy",
+    "diffusers",
+    "torchvision",
+    "transformers",
+    "accelerate",
+    "matplotlib",
+    "scikit-image",
+    "opencv-python",
+    "ftfy",
+    "dotenv",
+]
