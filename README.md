@@ -18,3 +18,6 @@ Torchscript is being phased out as it has several problems:
  - limited python support
  - criptic messages for debugging
  now you use torch.export to create an itermediate representation, a flattened computational graph with low level op. This can be then compiled to get a platform specific  binary
+
+## kuber_docker
+Orchestrate kubernetis locally via minikube

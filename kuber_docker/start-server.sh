@@ -1,7 +1,7 @@
 export MONGODB_IMAGE="mongo"
 export MONGODB_TAG="8"
-export BACKEND_PORT=27017
-export DB_PORT=3000 
+export BACKEND_PORT=3000
+export DB_PORT=27017 
 export CONTAINER_NAME="mongodb"
 export VOLUME_NAME="volume_db"
 export NETWORK_NAME="network_db"
@@ -77,7 +77,7 @@ docker run -d --name $BACKEND_NAME \
     -e MONGO_DB_USER=$MONGO_DB_USER \
     -e MONGO_DB_PASSWORD=$MONGO_DB_PASSWORD \
     -e DB_NAME=$DB_NAME \
-    -e PORT=$DB_PORT \
+    -e PORT=$BACKEND_PORT \
     -v ./backend/:/app \
     -p $BACKEND_PORT:$BACKEND_PORT \
     backend

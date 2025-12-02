@@ -6,6 +6,6 @@ RUN npm ci
 
 COPY . .
 # CMD ["executable"]
-CMD [ "npm", "start"]
+CMD [ "npm", "run", "dev"]
 
 

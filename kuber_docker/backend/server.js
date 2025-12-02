@@ -8,12 +8,16 @@ const db_name=process.env.DB_NAME
 console.log(`${db_host}`)
 console.log(`${db_name}`)
 // handles the request to url/health
-const healthRouter = express.Router();
+app.use(bodyParser.json());
 
+const healthRouter = express.Router();
+// health routes
 healthRouter.get('/', (req, res) => {
-  res.status(200).send('up');
+  res.status(200).send('up!');
 });
 app.use('/health', healthRouter);
+
+app.use("/store", require("./routes/store"));
 
 module.exports = {
   healthRouter,
