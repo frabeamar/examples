@@ -6,12 +6,16 @@ requires-python = ">=3.10"
 
 dependencies = [
     "scikit-image",
+    "numpy",
+    "tabulate",
     "torch",
-    "tensorrt",
     "torchvision",
-    #torch_tensor rt has to be installed explicitly with pip?
+    "tensorrt",
+    "setuptools",
+    "pandas",
+    # pytorch-quantization requires the NVIDIA index.
+    "tqdm",
+    "wget",
     # you have to take care that you link the right cuda libraries
     #LD_LIBRARY_PATH is a hard link with uv
-
 ]
-

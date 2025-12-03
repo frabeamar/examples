@@ -42,12 +42,16 @@ def benchmark(model, input_shape=(1024, 1, 32, 32), dtype='fp32', nwarmup=50, nr
 
 
 def main():
+    """
+    Benchmark the two models, 
+    the compiled version should be
+    """
     precision = "fp32"
     ssd300 = torch.hub.load(
         "NVIDIA/DeepLearningExamples:torchhub", "nvidia_ssd", model_math=precision
     )
 
-    model = torch.jit.load("trt_model.ts")
+    model = torch.jit.load("trt_model.ts").eval()
     benchmark(model, input_shape=(128, 3, 300, 300), nwarmup=10, nruns=10)
 
 
@@ -62,7 +66,6 @@ def trace_model():
     )
     model = ssd300.eval().to("cuda")
     half_tensor = torch.randn((1, 3, 300, 300), dtype=torch.float32)
-    
     traced_model = torch.jit.trace(model, [half_tensor.to("cuda")])
 
 
@@ -76,9 +79,6 @@ def trace_model():
 
     )
     torch.jit.save(trt_model, "trt_model.ts")
-
-    loaded_model = torch.jit.load("trt_model.ts")
-    loaded_model.eval()  # switch to evaluation mode
 
 trace_model()
 main()
