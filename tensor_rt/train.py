@@ -53,7 +53,9 @@ def set_parameter_requires_grad(model, feature_extracting):
 
 
 # Define functions for training, evalution, saving checkpoint and train parameter setting function
-def train(model: nn.Module, dataloader: torchdata.DataLoader, crit, opt, epoch: int):
+def train_epoch(
+    model: nn.Module, dataloader: torchdata.DataLoader, crit, opt, epoch: int
+):
     model.train()
     running_loss = 0.0
     for idx, (batch, labels) in enumerate(dataloader):
@@ -84,7 +86,7 @@ def dtype_to_torch_type(dtype: Literal["fp32", "fp16", "int8"]):
             assert False
 
 
-def evaluate(model, dataloader, crit, epoch: int, dtype: Literal["fp32", "fp16"]):
+def evaluate(model, dataloader, crit, epoch: int, dtype: Literal["fp32", "fp16"] = "fp32"):
     total = 0
     correct = 0
     loss = 0.0

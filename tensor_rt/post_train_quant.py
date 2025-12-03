@@ -7,13 +7,14 @@ import torch.optim as optim
 import torch_tensorrt
 import torch_tensorrt as torchtrt
 from modelopt.torch.quantization.utils import export_torch_mode
+from train import dataset_splits, evaluate, load_model, save_checkpoint, train_epoch, benchmark
 
 cudnn.benchmark = True
 
 print(pytorch_quantization.__version__)
 
 
-def main():
+def pre_train(ckpt_path:str="mobilenetv2_base_ckpt"):
     train_dataloader, val_dataloader, calib_dataloader = dataset_splits()
     # we set all requires grad to false on the backbone, then train a new classifier
     model = load_model(feature_extract=True)
@@ -30,8 +31,8 @@ def main():
     for epoch in range(num_epochs):
         print("Epoch: [%5d / %5d] LR: %f" % (epoch + 1, num_epochs, lr))
 
-        train(model, train_dataloader, criterion, optimizer, epoch)
-        test_loss, test_acc = evaluate(model, val_dataloader, criterion, epoch)
+        train_epoch(model, train_dataloader, criterion, optimizer, epoch)
+        test_loss, test_acc = evaluate(model, val_dataloader, criterion, epoch, dtype="fp32")
 
         print("Test Loss: {:.5f} Test Acc: {:.2f}%".format(test_loss, 100 * test_acc))
 
@@ -42,7 +43,7 @@ def main():
             "acc": test_acc,
             "opt_state_dict": optimizer.state_dict(),
         },
-        ckpt_path="mobilenetv2_base_ckpt",
+        ckpt_path=ckpt_path,
     )
 
 
@@ -189,7 +190,5 @@ def read():
     print(pd.read_csv("benchmarking.csv").to_markdown())
 
 
-# main()
-# compile()
-read()
-compile()
+if __name__ == "__main__":
+    pre_train()
