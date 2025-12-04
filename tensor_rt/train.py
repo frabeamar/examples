@@ -54,10 +54,11 @@ def set_parameter_requires_grad(model, feature_extracting):
 
 # Define functions for training, evalution, saving checkpoint and train parameter setting function
 def train_epoch(
-    model: nn.Module, dataloader: torchdata.DataLoader, crit, opt, epoch: int
+    model: nn.Module, dataloader: torchdata.DataLoader, opt
 ):
     model.train()
     running_loss = 0.0
+    crit = nn.CrossEntropyLoss()
     for idx, (batch, labels) in enumerate(dataloader):
         batch, labels = batch.cuda(), labels.cuda(non_blocking=True)
         opt.zero_grad()
@@ -86,19 +87,19 @@ def dtype_to_torch_type(dtype: Literal["fp32", "fp16", "int8"]):
             assert False
 
 
-def evaluate(model, dataloader, crit, epoch: int, dtype: Literal["fp32", "fp16"] = "fp32"):
+def evaluate(model, dataloader, dtype: Literal["fp32", "fp16"] = "fp32"):
     total = 0
     correct = 0
     loss = 0.0
     class_probs = []
     class_preds = []
     model.eval()
-
+    criterion = nn.CrossEntropyLoss()
     with torch.no_grad():
         for data, labels in dataloader:
             data, labels = data.cuda(), labels.cuda(non_blocking=True)
             out = model(data.to(dtype_to_torch_type(dtype)))
-            loss += crit(out, labels)
+            loss += criterion(out, labels)
             preds = torch.max(out, 1)[1]
             class_probs.append([F.softmax(i, dim=0) for i in out])
             class_preds.append(preds)
@@ -141,7 +142,7 @@ def timeit(
             end_time = time.time()
             timings.append(end_time - start_time)
     print("Average batch time: %.2f ms" % (np.mean(timings) * 1000))
-    return np.mean(timings) * 1000
+    return np.mean(timings).item() * 1000
 
 
 def dataset_splits():
@@ -177,9 +178,9 @@ def load_model(feature_extract: bool):
 
 
 def benchmark(
-    method_name: str, model, val_dataloader, criterion, dtype: Literal["fp32", "fp16"]
+    method_name: str, model, val_dataloader,dtype: Literal["fp32", "fp16"] = "fp32"
 ) -> dict:
-    test_loss, test_acc = evaluate(model, val_dataloader, criterion, 0, dtype=dtype)
+    test_loss, test_acc = evaluate(model, val_dataloader, dtype=dtype)
     timings = timeit(model, input_shape=(64, 3, 224, 224), dtype=dtype)
     print(f"{method_name}: {(test_acc * 100):.2f}%")
     return {

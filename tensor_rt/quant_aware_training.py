@@ -1,16 +1,19 @@
+import pandas as pd
+import glob
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, assert_never
 
-import pandas as pd
 import torch
 import torch.nn as nn
+import torch_tensorrt
 from pytorch_quantization import calib, quant_modules
 from pytorch_quantization import nn as quant_nn
 from tqdm import tqdm
 
 from main import benchmark
-from train import dataset_splits, load_model
+from train import dataset_splits, evaluate, load_model, save_checkpoint, train_epoch
 
 
 def compute_amax(model: nn.Module, **kwargs):
@@ -128,6 +131,7 @@ def quant_aware_calibration():
             HistogramCalib("entropy", 0.99),
             HistogramCalib("percentile", 0.99),
         ]:
+            print(calibrator)
             calib_model_path = calibrate_model(
                 model=qat_model,
                 model_name="mobilenet",
@@ -136,13 +140,94 @@ def quant_aware_calibration():
                 calibrator=calibrator,
                 out_dir="./",
             )
-            model = qat_model.load_state_dict(torch.load(calib_model_path))
-            logs = benchmark(model, input_shape=(64, 3, 224, 224))
-            res.append(logs)
 
+
+state = {}
+
+
+# Adjust learning rate based on epoch number
+def adjust_lr(lr: float, optimizer, epoch):
+    global state
+    new_lr = lr * (0.5 ** (epoch // 12)) if state["lr"] > 1e-7 else state["lr"]
+    if new_lr != state["lr"]:
+        state["lr"] = new_lr
+        print("Updating learning rate: {}".format(state["lr"]))
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = state["lr"]
+
+
+def finetune_with_quantized(
+    model, train_dataloader, eval_dataloader, optimizer, num_epochs: int
+):
+    """
+    After getting the bounds for quantization you still have to finetune the weights
+    This should be with an anneelead learning rate and 10% of the training time.
+
+    """
+    for epoch in range(num_epochs):
+        train_epoch(model, train_dataloader, optimizer)
+        test_loss, test_acc = evaluate(model, eval_dataloader)
+        print("Test Loss: {:.5f} Test Acc: {:.2f}%".format(test_loss, 100 * test_acc))
+    return model
+
+    # save_checkpoint({'epoch': epoch + 1,
+    #                 'model_state_dict': model.state_dict(),
+    #                 'acc': test_acc,
+    #                 'opt_state_dict': optimizer.state_dict()},
+    #                 ckpt_path="mobilenet-finetuned")
+
+
+def quant_aware_train():
+    quant_nn.TensorQuantizer.use_fb_fake_quant = True
+    train_dataloader, eval_dataloader, calib_dataloader = dataset_splits()
+    model = load_model(False)
+    for m in glob.glob("*.pth"):
+        # here strict is False as we want to ingore the quantizer max elements
+        model.load_state_dict(torch.load(m), strict=False)
+        model = finetune_with_quantized(
+            model,
+            train_dataloader,
+            eval_dataloader,
+            torch.optim.SGD(model.parameters(), lr=0.001),
+            1,
+        )
+        save_checkpoint({"model_state_dict": model.state_dict()}, Path(m).stem + "_finetuned.pth")
+
+
+def compile():
+    res = []
+    train_dataloader, eval_dataloader, calib_dataloader = dataset_splits()
+    for m in glob.glob("*finetuned.pth"):
+        model = load_model(False).eval()
+        model.load_state_dict(torch.load(m)["model_state_dict"], strict=True)
+        with torch.no_grad():
+            data = iter(calib_dataloader)
+            images, _ = next(data)
+            # error with gratest relative difference:
+            # if the model is fake quantized jit cannot reproduce them
+            # you should finetune first
+            jit_model = torch.jit.trace(model, images.to("cuda"))
+            torch.jit.save(jit_model, Path(m).stem + "traced.pt")
+
+        compile_spec = {
+            "inputs": [torch_tensorrt.Input([64, 3, 224, 224])],
+            "enabled_precisions": torch.float,
+            # "truncate_long_and_double_enabled"
+        }
+        # bad_nodes = []
+        # for node in jit_model.inlined_graph.nodes():
+        #     for out in node.outputs():
+        #         t = out.type()
+        #         if hasattr(t, "scalarType") and t.scalarType() in ["Long", "Double"]:
+        #             bad_nodes.append((node, t))
+
+        trt_mod = torch_tensorrt.compile(jit_model, **compile_spec)
+        logs = benchmark(Path(m).stem + "compiled", trt_mod, eval_dataloader)
+        res.append(logs)
     df = pd.DataFrame(res)
-    print(df.to_markdown())
     df.to_csv("quant_aware_benchmarking.csv")
+    
 
 
-quant_aware_calibration()
+# quant_aware_train()
+compile()

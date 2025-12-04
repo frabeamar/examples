@@ -54,5 +54,11 @@ Maybe I set up the tracing wrong
  ### Quantization aware training
  you model the quantization during training -> after the activation quantize the values and dequantize, so the next block receive fp32 again. During backprop the gradient is undefined, you just let it pass
 
+After quant_aware training -> 96% accuracy and 18 ms execution time
+Much better accuracy but is it a fair comparison since you trained one epoch more?
+
+
+### Triton
+Python-like programming language to write optimized kernels
 ## kuber_docker
 Orchestrate kubernetis locally via minikube
