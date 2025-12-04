@@ -60,5 +60,10 @@ Much better accuracy but is it a fair comparison since you trained one epoch mor
 
 ### Triton
 Python-like programming language to write optimized kernels
+
+
+
+### Stable diffusion
+Compiled unet: 
 ## kuber_docker
 Orchestrate kubernetis locally via minikube

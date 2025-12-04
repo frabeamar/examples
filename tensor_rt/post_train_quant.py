@@ -23,7 +23,6 @@ def pre_train(ckpt_path:str="mobilenetv2_base_ckpt"):
     lr = 0.0001
 
     # Use cross entropy loss for classification and SGD optimizer
-    criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=lr)
 
     # Train the model for 3 epochs to attain an acceptable accuracy.
@@ -31,8 +30,8 @@ def pre_train(ckpt_path:str="mobilenetv2_base_ckpt"):
     for epoch in range(num_epochs):
         print("Epoch: [%5d / %5d] LR: %f" % (epoch + 1, num_epochs, lr))
 
-        train_epoch(model, train_dataloader, criterion, optimizer, epoch)
-        test_loss, test_acc = evaluate(model, val_dataloader, criterion, epoch, dtype="fp32")
+        train_epoch(model, train_dataloader, optimizer)
+        test_loss, test_acc = evaluate(model, val_dataloader, dtype="fp32")
 
         print("Test Loss: {:.5f} Test Acc: {:.2f}%".format(test_loss, 100 * test_acc))
 
