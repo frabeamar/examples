@@ -1,0 +1,24 @@
+[project]
+name = "gradio"
+version = "0.1.0"
+description = "Image processing dataset"
+requires-python = ">=3.10"
+
+dependencies = [
+    "gradio",
+    "torch",
+    "diffusers",
+    "transformers",
+    "torchaudio",
+
+    #pixelart on 8Gb gpu
+    "bitsandbytes",
+    "torch",
+    "accelerate",
+    "SentencePiece",
+    "ftfy",
+    "beautifulsoup4"
+    
+
+
+]

@@ -1,0 +1,4 @@
+#! /bin/bash
+docker build -t gradio-app .
+# uv python  "from diffusers import DiffusionPipeline; DiffusionPipeline.from_pretrained(  model_id, revision='fp16', torch_dtype=torch.float16 )"
+docker compose up -d
