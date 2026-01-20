@@ -4,11 +4,71 @@
 
 import numpy as np # linear algebra
 import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+import os
+from sklearn import preprocessing, metrics, manifold
+from sklearn.manifold import TSNE
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV, cross_val_predict, StratifiedKFold, KFold, StratifiedShuffleSplit
+from imblearn.over_sampling import ADASYN, SMOTE
+from imblearn.under_sampling import NearMiss
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+import collections
+import matplotlib.patches as mpatches
+from sklearn.metrics import accuracy_score, classification_report, roc_auc_score, roc_curve, r2_score, recall_score, confusion_matrix, precision_recall_curve
+%matplotlib inline
+from sklearn.preprocessing import RobustScaler
+import xgboost
+from imblearn.metrics import classification_report_imbalanced
+from collections import Counter, defaultdict
+from nltk import word_tokenize
+from nltk.corpus import stopwords
+import matplotlib.pyplot as plt
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.decomposition import PCA, TruncatedSVD, SparsePCA
+from nltk.tokenize import word_tokenize
+import seaborn as sns
+from wordcloud import WordCloud, STOPWORDS
+import nltk
+import string
+from plotly import tools
+import plotly.offline as py
+import plotly.graph_objs as go
+from PIL import Image
+import re
+from nltk.stem import WordNetLemmatizer
+from nltk.stem import *
+import matplotlib
+from gensim.models import Word2Vec, KeyedVectors
+from matplotlib import pyplot
+from gensim.scripts.glove2word2vec import glove2word2vec
+from keras.preprocessing.sequence import pad_sequences
+from tensorflow import keras
+from keras.preprocessing.text import Tokenizer
+import tensorflow as tf
+import tensorflow_hub as hub
+import transformers
+from transformers import BertTokenizer, TFBertModel, AutoTokenizer, pipeline, TFDistilBertModel, TFRobertaModel, TFXLNetModel, BartModel, TFAlbertModel, FlaubertModel, TFOpenAIGPTModel, TFGPT2Model, TFElectraModel, TFLongformerModel
+from keras.models import Sequential, Model
+from tensorflow.keras.layers import LSTM, Dense, Flatten, Conv2D, Conv1D, GlobalMaxPooling1D
+from keras.optimizers import Adam
+from keras.layers.recurrent import LSTM, GRU
+from keras.layers.core import Dense, Activation, Dropout
+from keras.layers.embeddings import Embedding
+from keras.layers.normalization import BatchNormalization
+from keras.utils import np_utils
+from tensorflow.keras import layers
+from scipy.spatial.distance import cosine
+from pytorch_pretrained_bert import BertTokenizer
+from pytorch_pretrained_bert.modeling import BertModel
+
 
 # Input data files are available in the read-only "../input/" directory
 # For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory
 
-import os
 for dirname, _, filenames in os.walk('/kaggle/input'):
     for filename in filenames:
         print(os.path.join(dirname, filename))
@@ -21,51 +81,8 @@ train_df.head()
 
 len(train_df),train_df.index.shape[-1]
 
-import numpy as np
-import pandas as pd
-from sklearn import preprocessing,metrics,manifold
-from sklearn.manifold import TSNE
-from sklearn.model_selection import train_test_split,cross_val_score,GridSearchCV,cross_val_predict
-from imblearn.over_sampling import ADASYN,SMOTE
-from imblearn.under_sampling import NearMiss
-from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.svm import SVC
-import collections
-import matplotlib.patches as mpatches
-from sklearn.metrics import accuracy_score
-%matplotlib inline
-from sklearn.preprocessing import RobustScaler
-import xgboost
-from imblearn.metrics import classification_report_imbalanced
-from sklearn.metrics import classification_report,roc_auc_score,roc_curve,r2_score,recall_score,confusion_matrix,precision_recall_curve
-from collections import Counter
-from sklearn.model_selection import StratifiedKFold,KFold,StratifiedShuffleSplit
-from nltk import word_tokenize
-from nltk.corpus import stopwords
 stop_words = stopwords.words('english')
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-from sklearn.model_selection import train_test_split
-from sklearn.decomposition import PCA, TruncatedSVD,SparsePCA
-from sklearn.metrics import classification_report,confusion_matrix
-from nltk.tokenize import word_tokenize
-from collections import defaultdict
-from collections import Counter
-import seaborn as sns
-from wordcloud import WordCloud,STOPWORDS
-import nltk
-from nltk.corpus import stopwords
-import string
-from plotly import tools
-import plotly.offline as py
 py.init_notebook_mode(connected=True)
-import plotly.graph_objs as go
 
 ## Assess the shape of the data
 print("The Shape of the Dataset".format(),train_df.shape)
@@ -151,7 +168,6 @@ plot_count_1(count_good_stops,count_bad_stops,"Positive Reviews URLs","Negative 
 
 #WordCloud Visualizations
 #Method for creating wordclouds
-from PIL import Image
 def display_cloud(data,img_path,color):
     plt.subplots(figsize=(10,10))
     mask = np.array(Image.open(img_path))
@@ -273,7 +289,6 @@ plot_grams(trace_zero,trace_ones)
 
 
 %%time
-import re
 #Removes Punctuations
 def remove_punctuations(data):
     punct_tag=re.compile(r'[^\w\s]')
@@ -430,7 +445,6 @@ plot_grams(trace_zero,trace_ones)
 display_cloud(train_df['review'],'../input/avenger-image-1/captain-america__silo.png','blue')
 
 #Lemmatize the dataset
-from nltk.stem import WordNetLemmatizer
 
 
 def lemma_traincorpus(data):
@@ -448,7 +462,6 @@ train_df['review'][5:10]
 
 #For example let us try to stem them and check  a sample
 
-from nltk.stem import *
 def stem_traincorpus(data):
     stemmer = PorterStemmer()
     out_data=""
@@ -479,8 +492,6 @@ train_df['Binary']=train_li
 train_df.head()
 
 #Count Vectorization
-import matplotlib
-import matplotlib.pyplot as plt
 def vectorize(data):
     cv=CountVectorizer()
     fit_data_cv=cv.fit_transform(data)
@@ -575,7 +586,6 @@ check_df=list(train_df['review'].str.split())
 
 %%time
 ## Load word2vec algorithm from gensim
-from gensim.models import Word2Vec,KeyedVectors
 
 model=Word2Vec(check_df,min_count=1)
 word_li=list(model.wv.vocab)
@@ -599,7 +609,6 @@ distance=model.similarity('reviewers','injustice')
 print(distance)
 
 # PCA transform in 2D for visualization of embedded words
-from matplotlib import pyplot
 pca = PCA(n_components=2)
 transformation_model=loaded_model[loaded_model.wv.vocab]
 result = pca.fit_transform(transformation_model[:50])
@@ -632,7 +641,6 @@ for i, word in enumerate(words[:50]):
     pyplot.annotate(word, xy=(result[i, 0], result[i, 1]))
 pyplot.show()
 
-from gensim.scripts.glove2word2vec import glove2word2vec
 
 glove_file='../input/glove-global-vectors-for-word-representation/glove.6B.50d.txt'
 word2vec_output_file = 'glove.6B.100d.txt.word2vec'
@@ -656,7 +664,6 @@ for i, word in enumerate(words[:50]):
     pyplot.annotate(word, xy=(result[i, 0], result[i, 1]))
 pyplot.show()
 
-from gensim.models import Word2Vec,KeyedVectors
 
 fasttext_file="../input/fasttext-crawl-300d-2m/crawl-300d-2M.vec"
 print(fasttext_file)
@@ -679,9 +686,6 @@ for i, word in enumerate(words[:50]):
 pyplot.show()
 
 #Creating Embedding Matrix
-from keras.preprocessing.sequence import pad_sequences
-from tensorflow import keras
-from keras.preprocessing.text import Tokenizer
 maxlen=1000
 max_features=5000 
 embed_size=300
@@ -720,9 +724,6 @@ plt.show()
 !pip install "tensorflow_hub>=0.6.0"
 !pip3 install tensorflow_text==1.15
 
-import tensorflow as tf
-import tensorflow_hub as hub
-import numpy as np
 
 
 
@@ -730,8 +731,6 @@ import numpy as np
 z=train_df['review'].tolist()
 
 ##Tensorflow Hub ELMO-2
-import tensorflow_hub as hub
-import tensorflow as tf
 
 elmo = hub.load("https://tfhub.dev/google/elmo/2")
 
@@ -749,8 +748,6 @@ elmo_output=create_elmo_embeddings(elmo_input)
 
 #tokenize and encode the inputs
 
-import transformers
-from transformers import BertTokenizer,TFBertModel
 tokenizer = transformers.BertTokenizer.from_pretrained('bert-large-uncased', do_lower_case=True)
 bert_model = transformers.TFBertModel.from_pretrained('bert-large-uncased')
 def bert_encode(data,maximum_length) :
@@ -782,17 +779,6 @@ train_attention_masks,train_input_ids
 
 
 #Build a miniature model for extracting the embeddings
-import tensorflow as tf
-from keras.models import Sequential,Model
-from tensorflow.keras.layers import LSTM, Dense,Flatten,Conv2D,Conv1D,GlobalMaxPooling1D
-from keras.optimizers import Adam
-from keras.models import Sequential
-from keras.layers.recurrent import LSTM, GRU
-from keras.layers.core import Dense, Activation, Dropout
-from keras.layers.embeddings import Embedding
-from keras.layers.normalization import BatchNormalization
-from keras.utils import np_utils
-from tensorflow.keras import layers
 input_ids = tf.keras.layers.Input(shape=(128,), name='input_token', dtype='int32')
 input_masks_ids = tf.keras.layers.Input(shape=(128,), name='masked_token', dtype='int32')
 bert_output=bert_model([input_ids,input_masks_ids])[0]
@@ -802,8 +788,6 @@ model=Model(inputs=[input_ids,input_masks_ids],outputs=[bert_output])
 model.summary()
 
 #Use the tokenizer and model  from the Transformers and determine the output features from the last hidden layer.
-import tensorflow as tf
-from transformers import BertTokenizer, TFBertModel
 
 def get_embeddings(model_name,tokenizer,name,inp):
     tokenizer = tokenizer.from_pretrained(name)
@@ -823,9 +807,6 @@ plt.plot(cls_token[1])
 plt.show()
 
 #Distil BERT Embeddings
-import numpy as np
-from transformers import AutoTokenizer, pipeline, TFDistilBertModel
-from scipy.spatial.distance import cosine
 def transformer_embedding(name,inp,model_name):
 
     model = model_name.from_pretrained(name)
@@ -845,7 +826,6 @@ plt.plot(embedding_features1[0])
 plt.plot(embedding_features2[0])
 
 #BERT embeddings
-from transformers import AutoTokenizer, pipeline, TFBertModel
 bert_features1=transformer_embedding('bert-base-uncased',z[0],TFBertModel)
 bert_features2=transformer_embedding('bert-base-uncased',z[1],TFBertModel)
 distance=1-cosine(bert_features1[0],bert_features2[0])
@@ -855,7 +835,6 @@ plt.plot(bert_features2[0])
 plt.show()
 
 ##Roberta Embeddings
-from transformers import AutoTokenizer, pipeline, TFRobertaModel
 roberta_features1=transformer_embedding('roberta-base',z[0],TFRobertaModel)
 roberta_features2=transformer_embedding('roberta-base',z[1],TFRobertaModel)
 distance=1-cosine(roberta_features1[0],roberta_features2[0])
@@ -864,7 +843,6 @@ plt.plot(roberta_features1[0])
 plt.plot(roberta_features2[0])
 plt.show()
 
-from transformers import AutoTokenizer, pipeline, TFXLNetModel
 xlnet_features1=transformer_embedding('xlnet-base-cased',z[0],TFXLNetModel)
 xlnet_features2=transformer_embedding('xlnet-base-cased',z[1],TFXLNetModel)
 distance=1-cosine(xlnet_features1[0],xlnet_features2[0])
@@ -873,7 +851,6 @@ plt.plot(xlnet_features1[0])
 plt.plot(xlnet_features2[0])
 plt.show()
 
-from transformers import AutoTokenizer, pipeline, BartModel
 bart_features1=transformer_embedding('facebook/bart-base',z[0],BartModel)
 bart_features2=transformer_embedding('facebook/bart-base',z[1],BartModel)
 distance=1-cosine(bart_features1[0],bart_features2[0])
@@ -882,7 +859,6 @@ plt.plot(bart_features1[0])
 plt.plot(bart_features2[0])
 plt.show()
 
-from transformers import AutoTokenizer, pipeline, TFAlbertModel
 albert_features1=transformer_embedding('albert-base-v1',z[0],TFAlbertModel)
 albert_features2=transformer_embedding('albert-base-v1',z[1],TFAlbertModel)
 distance=1-cosine(albert_features1[0],albert_features2[0])
@@ -892,7 +868,6 @@ plt.plot(albert_features2[0])
 plt.show()
 
 #sophisticated variants of BERT
-from transformers import AutoTokenizer, pipeline, FlaubertModel
 flaubert_features1=transformer_embedding('flaubert/flaubert_base_cased',z[0],FlaubertModel)
 flaubert_features2=transformer_embedding('flaubert/flaubert_base_cased',z[1],FlaubertModel)
 distance=1-cosine(flaubert_features1[0],flaubert_features2[0])
@@ -902,7 +877,6 @@ plt.plot(flaubert_features2[0])
 plt.show()
 
 #GPT embeddings
-from transformers import AutoTokenizer, pipeline, TFOpenAIGPTModel
 def transformer_gpt_embedding(name,inp,model_name):
 
     model = model_name.from_pretrained(name)
@@ -922,7 +896,6 @@ plt.plot(gpt_features2[0])
 plt.show()
 
 #GPT-2
-from transformers import AutoTokenizer, pipeline, TFGPT2Model
 
 gpt2_features1=transformer_gpt_embedding('openai-gpt',z[0],TFGPT2Model)
 gpt2_features2=transformer_gpt_embedding('openai-gpt',z[1],TFGPT2Model)
@@ -934,7 +907,6 @@ plt.show()
 
 #Electra
 
-from transformers import AutoTokenizer, pipeline, TFElectraModel
 electra_features1=transformer_embedding('google/electra-small-discriminator',z[0],TFElectraModel)
 electra_features2=transformer_embedding('google/electra-small-discriminator',z[1],TFElectraModel)
 distance=1-cosine(electra_features1[0],electra_features2[0])
@@ -944,7 +916,6 @@ plt.plot(electra_features2[0])
 plt.show()
 
 #Longformer
-from transformers import AutoTokenizer, pipeline, TFLongformerModel
 longformer_features1=transformer_embedding('allenai/longformer-base-4096',z[0],TFLongformerModel)
 longformer_features2=transformer_embedding('allenai/longformer-base-4096',z[1],TFLongformerModel)
 distance=1-cosine(longformer_features1[0],longformer_features2[0])
@@ -954,7 +925,6 @@ plt.plot(longformer_features2[0])
 plt.show()
 
 #Import BERT and the variables
-import os
 BERT_MODEL = 'bert-base-uncased'
 CASED = 'uncased' in BERT_MODEL
 INPUT = '../input/'
@@ -966,8 +936,6 @@ os.system('pip install --no-index --find-links="../input/pytorchpretrainedbert/"
 os.system('pip install --no-index --find-links="../input/pytorchpretrainedbert/" pytorch_pretrained_bert')
 
 #Load  from pytorch pretrained model- weights
-from pytorch_pretrained_bert import BertTokenizer
-from pytorch_pretrained_bert.modeling import BertModel
 
 #BERT_FP = '../input/torch-bert-weights/bert-base-uncased/bert-base-uncased/'
 #Function for creating BERT embeddings-matrix
@@ -985,4 +953,3 @@ plt.plot(embedding_matrix[0])
 plt.plot(embedding_matrix[1])
 plt.plot(embedding_matrix[2])
 plt.show()
-
