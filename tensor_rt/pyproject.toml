@@ -19,5 +19,9 @@ dependencies = [
     # you have to take care that you link the right cuda libraries
     #LD_LIBRARY_PATH is a hard link with uv
     "diffusers",
-    "transformers"
+    "transformers",
+    "attrdict",
+    "tritonclient[all]"
+
+
 ]
