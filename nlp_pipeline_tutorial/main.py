@@ -1,31 +1,32 @@
-import os
-import torch.nn as nn
-import torch
-from transformers import AutoModel, AutoTokenizer
-from sklearn.metrics import accuracy_score, classification_report
-os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir= /usr/lib/nvidia-cuda-toolkit"
 import re
 import string
 from collections import Counter
 from pathlib import Path
-
+import torchmetrics
 import matplotlib.pyplot as plt
 import numpy as np  # linear algebra
 import pandas as pd  # data processing, CSV file I/O (e.g. pd.read_csv)
 import seaborn as sns
 import tensorflow as tf
+import torch
+import torch.nn as nn
+import tqdm
 import transformers
+from datasets import Dataset
 from gensim.models import Word2Vec
 from keras.models import Model
-
+from torchmetrics import MetricCollection, Accuracy, Precision, Recall, F1Score
 # from keras.preprocessing.text import Tokenizer
 from nltk.corpus import stopwords
 from nltk.stem import *
-from pytorch_pretrained_bert import BertTokenizer
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.metrics import accuracy_score, classification_report
+from torch.utils.data import DataLoader
 from transformers import (
+    AutoModel,
+    AutoTokenizer,
     BartModel,
-    BertTokenizer,
+    DataCollatorWithPadding,
     FlaubertModel,
     TFAlbertModel,
     TFAutoModel,
@@ -196,7 +197,6 @@ def model_summary():
 
 
 def get_embeddings(model: TFBertModel, tokenizer, model_name: str, inp):
-    from transformers import AutoTokenizer
     tokenizer = tokenizer.from_pretrained(model_name)
     model = TFAutoModel.from_pretrained(
         model_name, use_safetensors=False, force_download=True
@@ -247,33 +247,136 @@ def transformer_gpt_embedding(name, inp, model_name):
 class SentimentHead(nn.Module):
     def __init__(self):
         super().__init__()
-        self.l1 = nn.Linear(768, 256) # Intermediate layer
-        self.l2 = nn.Linear(256, 3)   # 3 output classes
+        self.l1 = nn.Linear(768, 256)  # Intermediate layer
+        self.l2 = nn.Linear(256, 2)  # 3 output classes
         self.softmax = nn.LogSoftmax(dim=1)
+        #vocab of roberta
+        self.embedding = nn.Embedding(50265, 768)        
 
-    def forward(self, features):
+
+    def forward(self, data):
         # features is the [0] token embedding from your pipeline
-        x = torch.relu(self.l1(features))
+        # features = self.feature_extractor.model(
+        #     input_ids=data["input_ids"].cuda(),
+        #     attention_mask=data["attention_mask"].cuda(),
+        # )
+        embedded = self.embedding(data["input_ids"])
+
+        
+        # Use the attention_mask to ignore padding during averaging
+        mask = data["attention_mask"].unsqueeze(-1).float() 
+        masked_embedded = embedded * mask
+        
+        # Mean Pooling: Average the word vectors to get one sentence vector
+        # [batch, embed_dim]
+        sentence_vector = masked_embedded.sum(1) / mask.sum(1).clamp(min=1e-9)
+        
+        # Pass through MLP
+        x = torch.relu(self.l1(sentence_vector))
         return self.softmax(self.l2(x))
+
 
 def sentiment_analysis():
     # m = AutoModel.from_pretrained(name, use_safetensors=False)
     # tokenizer = AutoTokenizer.from_pretrained(name)
 
-    pipe = pipeline("sentiment-analysis", model="cardiffnlp/twitter-roberta-base-sentiment-latest")
+    pipe = pipeline(
+        "sentiment-analysis",
+        model="cardiffnlp/twitter-roberta-base-sentiment-latest",
+        # in case there a longer text
+        truncation=True,
+        max_length=512,
+    )
 
     train = pd.read_csv("train.csv")
+    train.text = train.text.apply(clean)
     outputs = []
-    for t in train.text:
-        outputs.extend(pipe(T))
+    for t in tqdm.tqdm(train.text):
+        outputs.extend(pipe(t))
 
     preds = pd.DataFrame.from_records(outputs)
-    y_pred =  preds["label"] == "positive"
+    y_pred = preds["label"] == "positive"
     y_gt = train["sentiment"] == "pos"
     print(accuracy_score(y_gt, y_pred))
     print(classification_report(y_gt, y_pred))
+    """
+                  precision    recall  f1-score   support
+
+       False       0.72      0.90      0.80     12500
+        True       0.86      0.65      0.74     12500
+
+    accuracy                           0.77     25000
+   macro avg       0.79      0.77      0.77     25000
+weighted avg       0.79      0.77      0.77     25000
+
+    """
 
 
+def tokenize_function(examples, tokenizer):
+    return tokenizer(
+        examples["text"], padding="max_length", truncation=True, max_length=128
+    )
+
+
+def retrain_sentiment_analysis():
+    name = "roberta-base"
+    m = AutoModel.from_pretrained(name, use_safetensors=False)
+    tokenizer = AutoTokenizer.from_pretrained(name)
+    # pipe = pipeline("feature-extraction", model=m, tokenizer=tokenizer)
+    df = pd.read_csv("train.csv")
+    df.text.apply(clean)
+    df.sentiment = df.sentiment.apply(lambda x: x == "pos")
+    dataset = Dataset.from_pandas(df)
+    tokenized_datasets = dataset.map(
+        lambda x: tokenize_function(x, tokenizer), batched=True
+    )
+    tokenized_datasets = tokenized_datasets.remove_columns(["text"])
+    tokenized_datasets.set_format("torch")
+    # Create the DataLoader
+    data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+    train_dataloader = DataLoader(
+        tokenized_datasets, shuffle=True, batch_size=8, collate_fn=data_collator
+    )
+    # still needs a tokenizer to substitute ids into words
+    # pipeline("feature-extraction", model=m, tokenizer=tokenizer)
+    pipe = SentimentHead().train()
+    # Unfreeze all parameters
+    for p in pipe.parameters():
+        p.requires_grad = True
+    # loss_fn = nn.CrossEntropyLoss()
+    loss_fn  = nn.NLLLoss()
+    pbar = tqdm.tqdm(enumerate(train_dataloader))
+    optimizer = torch.optim.AdamW(pipe.parameters(), lr=2e-3)
+    acc = torchmetrics.Accuracy("multiclass", num_classes=10).cuda()
+    metrics = MetricCollection([
+        Accuracy(task="binary"),
+        Precision(task="binary"),
+        Recall(task="binary"),
+        F1Score(task="binary")
+    ])
+    for epoch in range(1):
+        for batch_idx,  data in pbar:
+
+            pred = pipe(data)
+            gt = torch.where(data.sentiment, 1, 0)
+            # .to( torch.int32)
+            optimizer.zero_grad()
+            loss = loss_fn(pred, gt)
+            loss.backward()
+            optimizer.step()
+            pbar.set_postfix({"loss": f"{loss:.4f}", "status": "Training"})
+            metrics( pred[:, 0], gt)
+            if batch_idx % 100 == 0:
+                print(metrics.compute())
+
+        
+        torch.save(pipe.state_dict(), f"sentiment_{epoch}.pth")
+
+
+
+
+# sentiment_analysis()
+retrain_sentiment_analysis()
 # cls_token = transformer_embedding("roberta-base", z)
 # "bert-base-uncased": TFBertModel,
 # "roberta-base": TFRobertaModel,
