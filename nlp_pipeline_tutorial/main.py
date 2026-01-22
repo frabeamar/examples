@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import tqdm
 import transformers
+from torch.utils.tensorboard import SummaryWriter
 from datasets import Dataset
 from gensim.models import Word2Vec
 from keras.models import Model
@@ -249,31 +250,13 @@ class SentimentHead(nn.Module):
         super().__init__()
         self.l1 = nn.Linear(768, 256)  # Intermediate layer
         self.l2 = nn.Linear(256, 2)  # 3 output classes
-        self.softmax = nn.LogSoftmax(dim=1)
-        #vocab of roberta
-        self.embedding = nn.Embedding(50265, 768)        
 
 
-    def forward(self, data):
-        # features is the [0] token embedding from your pipeline
-        # features = self.feature_extractor.model(
-        #     input_ids=data["input_ids"].cuda(),
-        #     attention_mask=data["attention_mask"].cuda(),
-        # )
-        embedded = self.embedding(data["input_ids"])
+    def forward(self, x):
 
-        
-        # Use the attention_mask to ignore padding during averaging
-        mask = data["attention_mask"].unsqueeze(-1).float() 
-        masked_embedded = embedded * mask
-        
-        # Mean Pooling: Average the word vectors to get one sentence vector
-        # [batch, embed_dim]
-        sentence_vector = masked_embedded.sum(1) / mask.sum(1).clamp(min=1e-9)
-        
         # Pass through MLP
-        x = torch.relu(self.l1(sentence_vector))
-        return self.softmax(self.l2(x))
+        x = torch.relu(self.l1(x))
+        return self.l2(x)
 
 
 def sentiment_analysis():
@@ -318,59 +301,97 @@ def tokenize_function(examples, tokenizer):
     )
 
 
+
+
 def retrain_sentiment_analysis():
     name = "roberta-base"
     m = AutoModel.from_pretrained(name, use_safetensors=False)
     tokenizer = AutoTokenizer.from_pretrained(name)
-    # pipe = pipeline("feature-extraction", model=m, tokenizer=tokenizer)
-    df = pd.read_csv("train.csv")
-    df.text.apply(clean)
-    df.sentiment = df.sentiment.apply(lambda x: x == "pos")
-    dataset = Dataset.from_pandas(df)
-    tokenized_datasets = dataset.map(
-        lambda x: tokenize_function(x, tokenizer), batched=True
-    )
-    tokenized_datasets = tokenized_datasets.remove_columns(["text"])
-    tokenized_datasets.set_format("torch")
+    extractor = pipeline("feature-extraction", model=m, tokenizer=tokenizer)
+   
+    sets = {}
+    for split in ["train", "test"]:
+        df = pd.read_csv(f"{split}.csv")
+        df.text = df.text.apply(clean)
+        df.sentiment = df.sentiment.apply(lambda x: x == "pos")
+
+
+        dataset = Dataset.from_pandas(df)
+        tokenized_datasets = dataset.map(
+            lambda x: tokenize_function(x, tokenizer), batched=True
+        )
+        tokenized_datasets = tokenized_datasets.remove_columns(["text"])
+        tokenized_datasets.set_format("torch")
+        sets[split] = tokenized_datasets
+    
+    train_dataset = sets["train"]
+    eval_dataset = sets["test"]
     # Create the DataLoader
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
     train_dataloader = DataLoader(
-        tokenized_datasets, shuffle=True, batch_size=8, collate_fn=data_collator
+        train_dataset, shuffle=True, batch_size=8, collate_fn=data_collator
+    )
+    eval_dataloader = DataLoader(
+        eval_dataset, shuffle=False, batch_size=8, collate_fn=data_collator
     )
     # still needs a tokenizer to substitute ids into words
     # pipeline("feature-extraction", model=m, tokenizer=tokenizer)
-    pipe = SentimentHead().train()
+    pipe = SentimentHead().cuda().train()
     # Unfreeze all parameters
     for p in pipe.parameters():
         p.requires_grad = True
-    # loss_fn = nn.CrossEntropyLoss()
-    loss_fn  = nn.NLLLoss()
-    pbar = tqdm.tqdm(enumerate(train_dataloader))
-    optimizer = torch.optim.AdamW(pipe.parameters(), lr=2e-3)
-    acc = torchmetrics.Accuracy("multiclass", num_classes=10).cuda()
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(pipe.parameters(), lr=2e-5)
+
     metrics = MetricCollection([
         Accuracy(task="binary"),
         Precision(task="binary"),
         Recall(task="binary"),
         F1Score(task="binary")
-    ])
-    for epoch in range(1):
-        for batch_idx,  data in pbar:
+    ]).cuda()
+    eval_metrics = MetricCollection([
+        Accuracy(task="binary"),
+        Precision(task="binary"),
+        Recall(task="binary"),
+        F1Score(task="binary")
+    ]).cuda()
+    logger = SummaryWriter(log_dir="runs/my_first_model")
+    
+    for epoch in range(10):
+        pbar = tqdm.tqdm(enumerate(train_dataloader))
+        for batch_idx, data in pbar:
 
-            pred = pipe(data)
-            gt = torch.where(data.sentiment, 1, 0)
+            gt = torch.where(data.sentiment, 1, 0).cuda()
+            features = extractor.model(input_ids = data["input_ids"].cuda(), attention_mask=data["attention_mask"].cuda())
+            mean = features.last_hidden_state.mean(dim=1)
+
+            pred = pipe(mean)
             # .to( torch.int32)
             optimizer.zero_grad()
             loss = loss_fn(pred, gt)
             loss.backward()
             optimizer.step()
             pbar.set_postfix({"loss": f"{loss:.4f}", "status": "Training"})
-            metrics( pred[:, 0], gt)
+            metrics( pred[:, 1], gt)
             if batch_idx % 100 == 0:
-                print(metrics.compute())
+                # print(metrics.compute())
+                logger.add_scalars("Train", metrics.compute(), epoch*len(train_dataloader) + batch_idx)
 
-        
         torch.save(pipe.state_dict(), f"sentiment_{epoch}.pth")
+
+        evalbar = tqdm.tqdm(enumerate(eval_dataloader))
+        with torch.no_grad():
+            pipe.eval()
+            for batch_idx, data in evalbar:
+                gt = torch.where(data.sentiment, 1, 0).cuda()
+                features = extractor.model(input_ids = data["input_ids"].cuda(), attention_mask=data["attention_mask"].cuda())
+                mean = features.last_hidden_state.mean(dim=1)
+                pred = pipe(mean)
+                eval_metrics( pred[:, 1], gt)
+            pipe.train()
+        logger.add_scalars("Eval", eval_metrics.compute(), epoch)
+        print(eval_metrics.compute())
+
 
 
 
