@@ -1,11 +1,11 @@
 [project]
-name = "datasets"
+name = "examples"
 version = "0.1.0"
 description = "Image processing dataset"
 requires-python = ">=3.10"
 
 dependencies = [
-    "torch>=1.9.1",
+    "torch",
     "kornia",
     "albumentations>=2.0.8",
     "opencv-python",
@@ -20,7 +20,7 @@ dependencies = [
     "pillow",
     "omegaconf",
     "hydra-core",
-    "scikit-image>=0.25.2",
+    "scikit-image",
     "torchmetrics",
     "matplotlib",
     "seaborn",
