@@ -1,3 +1,9 @@
+
+import tkinter as tk
+from tkinter import messagebox
+from typing import List, Tuple, Optional
+import numpy as np
+
 import random
 from typing import Dict, List, Tuple
 
@@ -195,7 +201,92 @@ def play_human(agent: TicTacToeAgent) -> None:
         if game.check_winner() != -1:
             print_board(game.board)
             break
-agent = train()
-breakpoint()
-print(agent.q_table)
-play_human(agent)
+
+class TicTacToeGUI:
+    def __init__(self, agent: TicTacToeAgent) -> None:
+        self.agent = agent
+        self.game = TicTacToeGame()
+        self.root = tk.Tk()
+        self.root.title("RL Tic-Tac-Toe: Human vs AI")
+        
+        # UI State
+        self.buttons: List[List[tk.Button]] = []
+        self._setup_grid()
+        
+        # Start the game: Agent goes first (Player 1)
+        self.agent_turn()
+
+    def _setup_grid(self) -> None:
+        """Creates a 3x3 grid of buttons."""
+        for r in range(3):
+            button_row: List[tk.Button] = []
+            for c in range(3):
+                btn = tk.Button(
+                    self.root, text="", font=('normal', 40, 'bold'),
+                    width=5, height=2,
+                    command=lambda row=r, col=c: self.on_click(row, col)
+                )
+                btn.grid(row=r, column=c)
+                button_row.append(btn)
+            self.buttons.append(button_row)
+
+    def on_click(self, r: int, c: int) -> None:
+        """Handles human move (Player 2 / O)."""
+        state = self.game.get_state()
+        move = (r, c)
+
+        if self.game.board[move] == 0:
+            self.game.make_move(move, 2)
+            self.buttons[r][c].config(text="O", state="disabled", disabledforeground="blue")
+            
+            if not self.check_game_over():
+                self.agent_turn()
+        else:
+            messagebox.showwarning("Invalid Move", "This cell is already taken!")
+
+    def agent_turn(self) -> None:
+        """Handles AI move (Player 1 / X)."""
+        state = self.game.get_state()
+        moves = self.game.get_available_moves()
+        
+        # Turn off exploration for the GUI play
+        orig_eps = self.agent.epsilon
+        self.agent.epsilon = 0.0
+        action = self.agent.choose_action(state, moves)
+        self.agent.epsilon = orig_eps
+        
+        self.game.make_move(action, 1)
+        r, c = action
+        self.buttons[r][c].config(text="X", state="disabled", disabledforeground="red")
+        
+        self.check_game_over()
+
+    def check_game_over(self) -> bool:
+        """Checks for win/loss/draw and shows a popup."""
+        winner = self.game.check_winner()
+        if winner != -1:
+            if winner == 1:
+                messagebox.showinfo("Game Over", "AI (X) Wins!")
+            elif winner == 2:
+                messagebox.showinfo("Game Over", "You (O) Win!")
+            else:
+                messagebox.showinfo("Game Over", "It's a Draw!")
+            self.reset_gui()
+            return True
+        return False
+
+    def reset_gui(self) -> None:
+        """Clears board for a new game."""
+        self.game.reset()
+        for r in range(3):
+            for c in range(3):
+                self.buttons[r][c].config(text="", state="normal")
+        self.agent_turn()
+
+    def run(self) -> None:
+        self.root.mainloop()
+
+
+
+agent = train(episodes=20)
+TicTacToeGUI(agent).run()
