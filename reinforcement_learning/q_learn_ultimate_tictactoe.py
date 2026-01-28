@@ -42,8 +42,8 @@ class ReplayMemory:
 
 class  UltimateAgent:
     def __init__(self, learning_rate: float = 1e-4) -> None:
-        self.policy_net = UltimateDQN()
-        self.target_net = UltimateDQN() # Stable target for Bellman updates
+        self.policy_net = UltimateDQN().cuda()
+        self.target_net = UltimateDQN().cuda() # Stable target for Bellman updates
         self.target_net.load_state_dict(self.policy_net.state_dict())
         
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
@@ -52,7 +52,7 @@ class  UltimateAgent:
         self.gamma = 0.99   # Discount factor
         self.update_target_counter = 0
 
-    def select_action(self, state: np.ndarray, mask: np.ndarray) -> int:
+    def select_action(self, state: torch.Tensor, mask: np.ndarray) -> int:
         """
         state: 9x9 array
         mask: 81-length binary array (1 for legal move, 0 for illegal)
@@ -62,8 +62,8 @@ class  UltimateAgent:
             return random.choice(legal_indices)
 
         with torch.no_grad():
-            state_t = torch.FloatTensor(state).unsqueeze(0).unsqueeze(0)
-            q_values = self.policy_net(state_t).squeeze(0).numpy()
+            state_t = torch.FloatTensor(state).unsqueeze(0).unsqueeze(0).cuda()
+            q_values = self.policy_net(state_t).squeeze(0).cpu().numpy()
             
             # Mask illegal moves by setting Q-value very low
             q_values[mask == 0] = -np.inf
@@ -81,11 +81,11 @@ class  UltimateAgent:
 
         # Convert to PyTorch Tensors
         # State shape: [batch, 1, 9, 9]
-        state_t = torch.FloatTensor(np.array(state_b)).unsqueeze(1)
-        next_state_t = torch.FloatTensor(np.array(next_state_b)).unsqueeze(1)
-        action_t = torch.LongTensor(action_b).unsqueeze(1)
-        reward_t = torch.FloatTensor(reward_b)
-        done_t = torch.FloatTensor(done_b)
+        state_t = torch.FloatTensor(np.array(state_b)).unsqueeze(1).cuda()
+        next_state_t = torch.FloatTensor(np.array(next_state_b)).unsqueeze(1).cuda()
+        action_t = torch.LongTensor(action_b).unsqueeze(1).cuda()
+        reward_t = torch.FloatTensor(reward_b).cuda()
+        done_t = torch.FloatTensor(done_b).cuda()
 
         # 3. Get current Q-values for the actions taken
         # policy_net(state_t) returns [64, 81]. gather(1, action_t) picks the specific move.
