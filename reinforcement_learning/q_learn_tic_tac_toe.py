@@ -208,6 +208,8 @@ class TicTacToeGUI:
         self.game = TicTacToeGame()
         self.root = tk.Tk()
         self.root.title("RL Tic-Tac-Toe: Human vs AI")
+        self.root.lift()  # Lift window to top
+        self.root.attributes('-topmost', True) # Force to front
         
         # UI State
         self.buttons: List[List[tk.Button]] = []
@@ -285,7 +287,6 @@ class TicTacToeGUI:
 
     def run(self) -> None:
         self.root.mainloop()
-
 
 
 agent = train(episodes=20)
