@@ -4,7 +4,8 @@ import pandas as pd
 import seaborn as sns
 from datasets import load_dataset
 from pandas.plotting import lag_plot
-
+from sklearn.metrics import r2_score
+from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestRegressor
 
 # from xgboost import XGBRegressor
@@ -14,10 +15,10 @@ from sklearn.gaussian_process.kernels import RBF, ExpSineSquared, WhiteKernel
 from sklearn.gaussian_process.kernels import ConstantKernel as C
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import mean_absolute_error
-from sklearn.model_selection import TimeSeriesSplit
+from sklearn.model_selection import TimeSeriesSplit, train_test_split
 from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 
 def train_gaussian_process(X_train, y_train):
@@ -107,107 +108,109 @@ def run_all(df):
     run_lag_analysis(df)
 
 
-import pandas as pd
-
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import FunctionTransformer
-
-
-# 1. Date Expansion Function
-def expand_dates(X):
-    X["Date"] = pd.to_datetime(X["Date"]).astype(np.int64) // 10**9
-    return X.drop(columns=["month", "Year"])
-
-
-date_transformer = FunctionTransformer(expand_dates)
-
-preprocessor = ColumnTransformer(
-    transformers=[
-        (
-            "num",
-            Pipeline(
-                [
-                    ("imputer", SimpleImputer(strategy="constant", fill_value=0)),
-                    ("scaler", StandardScaler()),
-                ]
+def preprocessor(numerical_columns: list[str], categorical_columns: list[str]):
+    column_transform = ColumnTransformer(
+        transformers=[
+            (
+                "num",
+                Pipeline(
+                    [
+                        ("imputer", SimpleImputer(strategy="constant", fill_value=0)),
+                        ("scaler", StandardScaler()),
+                    ]
+                ),
+                numerical_columns,
             ),
-            [
-                "Size",
-                "Temperature",
-                "Fuel_Price",
-                "MarkDown2",
-                "MarkDown3",
-                "MarkDown4",
-                "MarkDown5",
-                "Size",
-            ]
-            + [f"lag_{d}" for d in [1, 4, 12, 52]],
-        ),
-        ("date", MinMaxScaler(), ["Date", "CPI", "Unemployment", "IsHoliday"]),
-        (
-            "cat",
-            OneHotEncoder(handle_unknown="ignore"),
-            [
-                "Store",
-                "Dept",
-            ]
-            + [f"Type_{a}" for a in ["A", "B", "C"]],
-        ),
-    ],
-    remainder="passthrough",
-)
-# selector = SelectFromModel(RandomForestRegressor(n_estimators=50), threshold="median")
-selector = VarianceThreshold(threshold=0.01)
-walmart_pipeline = Pipeline(
-    steps=[
-        ("date_expansion", date_transformer),
-        ("preprocessing", preprocessor),
-        ("select", selector),
-    ]
-)
+            (
+                "cat",
+                OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+                categorical_columns,
+            ),
+        ],
+        remainder="passthrough",
+    )
+    return column_transform
 
 
-dataset = load_dataset("mayankmishra22/walmart-sales-model")
-train = dataset["train"].to_pandas()
-train["lag_1"] = train["Weekly_Sales"].shift(1, fill_value=0)  # Previous week
-train["lag_4"] = train["Weekly_Sales"].shift(4, fill_value=0)  # Previous week
-train["lag_12"] = train["Weekly_Sales"].shift(12, fill_value=0)  # Previous week
-train["lag_52"] = train["Weekly_Sales"].shift(52, fill_value=0)  # Same week last year
-
-train["rolling_mean_4"] = (
-    train["Weekly_Sales"].shift(1, fill_value=0).rolling(window=4).mean().fillna(0)
-)
-
-y = train.pop("Weekly_Sales")
-X = train.drop(["MarkDown1"], axis=1)
-fitted = walmart_pipeline.fit_transform(X, y)
 
 
-# Create 5 folds of time-series splits
-tscv = TimeSeriesSplit(n_splits=10)
+def load_walmart_dataset():
+    dataset = load_dataset("mayankmishra22/walmart-sales-model")
+    train: pd.DataFrame = dataset["train"].to_pandas()
 
-rf = RandomForestRegressor(
+    y = train.pop("Weekly_Sales")
+    X = train
+
+    print("Missing variables")
+    print(train.isna().any(axis=0))
+
+    train["Date"] = pd.to_datetime(train["Date"]).astype(np.int64) // 10**9
+    for lag in [1, 1, 2, 4, 12, 52]:
+        X[f"lag_{lag}"] =y.shift(
+            lag, fill_value=0
+        )  
+
+        X[f"rolling_mean_{lag}"] = (
+            y
+            .shift(lag, fill_value=0)
+            .rolling(window=lag * 4)
+            .mean()
+            .fillna(0)
+        )
+    
+    numerical_types = train.select_dtypes(include=[np.float64]).columns
+    categorical_types = train.select_dtypes(include=[np.int64]).columns
+    bools =  train.select_dtypes(include=[bool]).columns
+    column_transform = preprocessor(list(numerical_types), list(categorical_types) + list(bools))
+    column_transform.set_output(transform="pandas")
+    
+    X = column_transform.fit_transform(X)
+    selector = VarianceThreshold(0.01)
+    selector.set_output(transform = "pandas")
+    X = selector.fit_transform(X)
+
+
+    # y = y.diff(periods=1).fillna(0)
+    y = y.apply(np.log).clip(0)
+
+    return X, y
+
+
+
+def train_time_series(X:pd.DataFrame, y:pd.DataFrame):
+
+    # tscv = TimeSeriesSplit(test_size = int(len(X)*0.2))
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+
+
+    model = RandomForestRegressor(
     n_estimators=100,
     max_depth=15,  # Prevent over-fitting on noise
     n_jobs=-1,  # Use all CPU cores
     random_state=42,
-)
+    )
+    # model = MLPRegressor(hidden_layer_sizes=[32, 64, 128, 64, 32, 1], shuffle=False)
 
-for train_index, test_index in tscv.split(fitted):
-    X_train, X_test = X.iloc[train_index], X.iloc[test_index]
-    y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+    model.fit(X_train, y_train)
+    pred_test = model.predict(X_test)
+    pred_train = model.predict(X_train)
 
-    lr = MLPRegressor(hidden_layer_sizes=[32, 64, 128, 64, 32, 1])
-
-    lr.fit(X_train, y_train)
-    pred = lr.predict(X_test)
-
-    print(mean_absolute_error(pred, y_test))
-    plt.plot(test_index, y_test)
-    plt.plot(test_index, pred)
+    plt.figure(figsize=(10, 5))
+    plt.plot(np.arange(len(pred_test)), np.exp(pred_test))
+    plt.plot(np.arange(len(pred_test)), np.exp(y_test))
     plt.savefig("prediction")
     plt.close()
-    plt.plot(train_index, y_train)
-    plt.plot(lr.predict(X_train), pred)
-    plt.savefig("prediction_train")
-    plt.close()
+    print(mean_absolute_error(np.exp(pred_test), np.exp(y_test)))
+    print("r2 score" , r2_score(y_test, pred_test))
+    tscv = TimeSeriesSplit(n_splits=5)
+   
+    for train_index, test_index in tscv.split(X):
+        X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+        pred_test = model.predict(X_test)
+        pred_train = model.predict(X_train)
+        print(mean_absolute_error(pred_test, y_test))
+
+
+X, y = load_walmart_dataset()
+train_time_series(X, y)
